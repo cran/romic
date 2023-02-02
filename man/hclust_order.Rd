@@ -19,7 +19,7 @@ hclust_order(
 
 \item{feature_pk}{variable uniquely defining a row}
 
-\item{sample_pk}{variable uniquely definining a sample}
+\item{sample_pk}{variable uniquely defining a sample}
 
 \item{value_var}{An abundance value to use with \code{hclust}}
 
@@ -49,5 +49,4 @@ library(dplyr)
 df <- tidyr::crossing(letters = LETTERS, numbers = 1:10) \%>\%
   mutate(noise = rnorm(n()))
 hclust_order(df, "letters", "numbers", "noise", "rows")
-
 }

@@ -9,10 +9,9 @@
 #' @examples
 #'
 #' if (interactive()) {
-#'   shiny_ggplot_test(add_pca_loadings(brauer_2008_triple, npcs = 5))
+#'   shiny_ggplot_test(add_pcs(brauer_2008_triple, npcs = 5))
 #'   shiny_ggplot_test(brauer_2008_triple)
 #' }
-#'
 #' @export
 shiny_ggplot_test <- function(tomic) {
   checkmate::assertClass(tomic, "tomic")
@@ -44,11 +43,16 @@ shiny_ggplot_test <- function(tomic) {
 #' UI components for the ggplot module.
 #'
 #' @inheritParams shiny::moduleServer
+#' @param default_data_type Default data type selection
+#' @param default_plot_type Default plot type selection
 #'
 #' @returns A \code{shiny} UI
 #'
 #' @export
-ggplotOutput <- function(id) {
+ggplotOutput <- function(
+    id,
+    default_data_type = "samples",
+    default_plot_type = "univariate") {
   ns <- shiny::NS(id)
 
   shiny::tagList(
@@ -58,7 +62,7 @@ ggplotOutput <- function(id) {
         shiny::radioButtons(
           ns("data_type"),
           "Data Type",
-          selected = "samples",
+          selected = default_data_type,
           choices = c("samples", "features", "measurements"),
           inline = TRUE
         )
@@ -68,7 +72,7 @@ ggplotOutput <- function(id) {
         shiny::radioButtons(
           ns("plot_type"),
           "Plot Type",
-          selected = "univariate",
+          selected = default_plot_type,
           choices = c("univariate", "bivariate"),
           inline = TRUE
         )

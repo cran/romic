@@ -3,8 +3,7 @@
 #' Generate a \code{shiny} interactive heatmap that allows for on demand
 #'   filtering, ordering and faceting by variables of interest.
 #'
-#' @param tidy_omic a tidy_omic object constructed from
-#'   \code{\link{create_tidy_omic}}
+#' @inheritParams tomic_to
 #'
 #' @returns A \code{shiny} app
 #'
@@ -13,10 +12,9 @@
 #' if (interactive()) {
 #'   app_heatmap(brauer_2008_tidy)
 #' }
-#'
 #' @export
-app_heatmap <- function(tidy_omic) {
-  stopifnot("tidy_omic" %in% class(tidy_omic))
+app_heatmap <- function(tomic) {
+  checkmate::assertClass(tomic, "tomic")
 
   shinyApp(
     ui = fluidPage(
@@ -75,25 +73,31 @@ app_heatmap <- function(tidy_omic) {
       )
     ),
     server = function(input, output, session) {
-
       # defining options available to user for sorting and filtering
-      design <- tidy_omic$design
-      feature_pk <- design$feature_pk
-      sample_pk <- design$sample_pk
+      design <- tomic$design
+
+      # create tomic from tidy_omic or triple_omic
+
+      tidy_omic <- reactive({
+        tomic_to(tomic, "tidy_omic")
+      })
 
       # call filtering module
 
-      tidy_filtered_features <- filterServer(
-        "filter_features",
-        tidy_omic,
-        "features"
-      )
+      tidy_filtered_features <- reactive({
+        req(tidy_omic())
+        tidy_filtered_features <- filterServer(
+          "filter_features",
+          tidy_omic(),
+          "features"
+        )
+      })
 
       tidy_filtered_samples <- reactive({
         req(tidy_filtered_features())
         tidy_filtered_samples <- filterServer(
           "filter_samples",
-          tidy_filtered_features(),
+          tidy_filtered_features()(),
           "samples"
         )
       })
@@ -140,7 +144,7 @@ app_heatmap <- function(tidy_omic) {
 
       shiny::observe({
         shiny::req(facet_expression())
-        print(glue::glue("Faceting with formlua: {facet_expression()}"))
+        print(glue::glue("Faceting with formula: {facet_expression()}"))
       })
 
       # define measurement variables
@@ -197,16 +201,23 @@ app_heatmap <- function(tidy_omic) {
 
         shiny::req(tidy_organized()())
 
-        try(plot_heatmap(
-          tidy_organized()(),
-          feature_var = NULL,
-          sample_var = NULL,
-          value_var = input$measurement_var,
-          cluster_dim = "both",
-          change_threshold = thresholded_val(),
-          plot_type = "grob"
-        ),
-        silent = TRUE
+        try(
+          plot_heatmap(
+            tidy_organized()(),
+            feature_var = NULL,
+            sample_var = NULL,
+            value_var = input$measurement_var,
+            cluster_dim = "both",
+            change_threshold = thresholded_val(),
+            plot_type = "grob",
+            # suppress feature aggregatin when feature facets are present
+            max_display_features = ifelse(
+              is.null(input$feature_facets),
+              800,
+              Inf
+            )
+          ),
+          silent = TRUE
         )
       })
 
@@ -217,11 +228,14 @@ app_heatmap <- function(tidy_omic) {
             geom_text(label = "No data available", size = 15) +
             theme(text = element_blank(), line = element_blank())
         } else {
-
           # return either a faceted or unfaced plot
           if (!(is.null(input$feature_facets) & is.null(input$sample_facets))) {
             heatmap_plot() +
-              facet_grid(facet_expression(), space = "free", scales = "free")
+              facet_grid(
+                stats::as.formula(facet_expression()),
+                space = "free",
+                scales = "free"
+              )
           } else {
             heatmap_plot()
           }
@@ -256,6 +270,7 @@ app_heatmap <- function(tidy_omic) {
 #' @param change_threshold values with a more extreme absolute change will be
 #'   thresholded to this value.
 #' @param plot_type plotly (for interactivity) or grob (for a static ggplot)
+#' @inheritParams downsample_heatmap
 #'
 #' @returns a ggplot2 grob
 #'
@@ -280,22 +295,20 @@ app_heatmap <- function(tidy_omic) {
 #'   change_threshold = 5,
 #'   cluster_dim = "rows",
 #'   plot_type = "grob",
-#'   distance_measure = "corr",
-#'   hclust_method = "complete"
+#'   distance_measure = "corr"
 #' )
-#'
 #' @export
 plot_heatmap <- function(
-  tomic,
-  feature_var = NULL,
-  sample_var = NULL,
-  value_var = NULL,
-  cluster_dim = "both",
-  distance_measure = "dist",
-  hclust_method = "ward.D2",
-  change_threshold = Inf,
-  plot_type = "grob"
-  ) {
+    tomic,
+    feature_var = NULL,
+    sample_var = NULL,
+    value_var = NULL,
+    cluster_dim = "both",
+    distance_measure = "dist",
+    hclust_method = "ward.D2",
+    change_threshold = Inf,
+    plot_type = "grob",
+    max_display_features = 800) {
   checkmate::assertClass(tomic, "tomic")
 
   if ("NULL" %in% class(feature_var)) {
@@ -315,14 +328,24 @@ plot_heatmap <- function(
   checkmate::assertString(hclust_method)
   checkmate::assertNumber(change_threshold, lower = 0)
   checkmate::assertChoice(plot_type, c("plotly", "grob"))
+  checkmate::assertNumber(max_display_features)
 
   tidy_omic <- tomic_to(tomic, "tidy_omic")
 
   # convert groupId and sampleId to factors so they are ordered appropriately
 
-  if (tomic_sort_status(tidy_omic) == "fully sorted") {
+  if (tomic_sort_status(tidy_omic)[1] == "fully sorted") {
     # pre-sorted data
     clustered_tidy_omic <- tidy_omic
+    # add fields that would be expected had organization occurred
+    # using hclust_tidy_omic()
+    clustered_tidy_omic$data <- clustered_tidy_omic$data %>%
+      dplyr::mutate(
+        ordered_featureId = !!rlang::sym(clustered_tidy_omic$design$feature_pk),
+        feature_label = format_names_for_plotting(ordered_featureId),
+        ordered_sampleId = !!rlang::sym(clustered_tidy_omic$design$sample_pk),
+        sample_label = format_names_for_plotting(ordered_sampleId)
+      )
   } else {
     clustered_tidy_omic <- hclust_tidy_omic(
       tidy_omic = tidy_omic,
@@ -342,36 +365,51 @@ plot_heatmap <- function(
       -1 * change_threshold
     ))
 
-  # figure out font sizes for row labels
+  # downsample to speed to up heatmap rendering
+  augmented_tidy_omic_data <- downsample_heatmap(
+    tidy_data = augmented_tidy_omic_data,
+    value_var = value_var,
+    design = tomic$design,
+    max_display_features = max_display_features
+  )
 
+  # figure out font sizes for row labels
   feature_pk <- tomic$design$feature_pk
   sample_pk <- tomic$design$sample_pk
 
-  n_features <- clustered_tidy_omic$data %>%
+  n_features <- augmented_tidy_omic_data %>%
     dplyr::distinct(!!rlang::sym(feature_pk)) %>%
     nrow()
 
-  n_samples <- clustered_tidy_omic$data %>%
+  n_samples <- augmented_tidy_omic_data %>%
     dplyr::distinct(!!rlang::sym(sample_pk)) %>%
     nrow()
 
   heatmap_theme <- theme_minimal() +
-    theme(
-      text = element_text(size = 16, color = "black"),
-      title = element_text(size = 20, color = "black"),
-      axis.text.x = element_text(
-        size = ifelse(n_samples > 200, 0, pmin(20, 60 * sqrt(1 / n_samples))),
-        angle = 60,
-        hjust = 1
-      ),
-      axis.text.y = element_text(
-        size = ifelse(n_features > 200, 0, pmin(20, 60 * sqrt(1 / n_features)))
-      ),
-      axis.title.y = element_blank(),
-      strip.text = element_text(size = 18),
-      legend.position = "top",
-      strip.background = element_rect(fill = "gray80")
+     theme(
+       text = element_text(size = 16, color = "black"),
+       title = element_text(size = 20, color = "black"),
+       axis.title.y = element_blank(),
+       strip.text = element_text(size = 18),
+       legend.position = "top",
+       strip.background = element_rect(fill = "gray80")
     )
+
+  if (n_features > 200) {
+    heatmap_theme <- heatmap_theme + theme(axis.text.y = element_blank())
+  } else {
+    heatmap_theme <- heatmap_theme + theme(axis.text.y = element_text(size = pmin(20, 60 * sqrt(1 / n_features))))
+  }
+
+  if (n_samples > 200) {
+    heatmap_theme <- heatmap_theme + theme(axis.text.x = element_blank())
+  } else {
+    heatmap_theme <- heatmap_theme + theme(axis.text.x = element_text(
+      size = pmin(20, 60 * sqrt(1 / n_samples)),
+      angle = 90,
+      hjust = 1
+    ))
+  }
 
   heatmap_plot <- ggplot(
     augmented_tidy_omic_data,
@@ -379,9 +417,9 @@ plot_heatmap <- function(
       x = "ordered_sampleId",
       y = "ordered_featureId",
       fill = value_var
-      )
+    )
   ) +
-    geom_tile() +
+    geom_raster() +
     scale_fill_gradient2(
       expression(log[2] ~ abundance),
       low = "steelblue1",
@@ -415,14 +453,13 @@ plot_heatmap <- function(
 
 
 hclust_tidy_omic <- function(
-  tidy_omic,
-  feature_var,
-  sample_var,
-  value_var,
-  cluster_dim,
-  distance_measure = "dist",
-  hclust_method = "ward.D2"
-  ) {
+    tidy_omic,
+    feature_var,
+    sample_var,
+    value_var,
+    cluster_dim,
+    distance_measure = "dist",
+    hclust_method = "ward.D2") {
   check_tidy_omic(tidy_omic)
 
   checkmate::assertChoice(feature_var, tidy_omic$design$features$variable)
@@ -466,11 +503,10 @@ hclust_tidy_omic <- function(
     )
 
   if (cluster_dim == "columns") {
-
     # order by factor or alpha-numerically
 
     if (
-      class(distinct_features[[feature_var]]) %in% c("factor", "ordered")
+      any(class(distinct_features[[feature_var]]) %in% c("factor", "ordered"))
     ) {
       # retain previous ordering
 
@@ -487,7 +523,6 @@ hclust_tidy_omic <- function(
         levels = !!rlang::sym(tidy_omic$design$feature_pk)
       ))
   } else {
-
     # order with hclust
 
     ordered_distinct_features <- distinct_features %>%
@@ -495,7 +530,7 @@ hclust_tidy_omic <- function(
         tibble::tibble(
           !!rlang::sym(tidy_omic$design$feature_pk) := cluster_orders$rows
         ) %>%
-          dplyr::mutate(order = 1:dplyr::n()),
+          dplyr::mutate(order = seq_len(dplyr::n())),
         by = tidy_omic$design$feature_pk
       ) %>%
       dplyr::arrange(order) %>%
@@ -512,10 +547,9 @@ hclust_tidy_omic <- function(
     )
 
   if (cluster_dim == "rows") {
-
     # order by factor or alpha-numerically
 
-    if (class(distinct_samples[[sample_var]]) %in% c("factor", "ordered")) {
+    if (any(class(distinct_samples[[sample_var]]) %in% c("factor", "ordered"))) {
       # retain previous ordering
 
       ordered_distinct_samples <- distinct_samples %>%
@@ -531,7 +565,6 @@ hclust_tidy_omic <- function(
         levels = !!rlang::sym(tidy_omic$design$sample_pk)
       ))
   } else {
-
     # order with hclust
 
     ordered_distinct_samples <- distinct_samples %>%
@@ -539,7 +572,7 @@ hclust_tidy_omic <- function(
         tibble::tibble(
           !!rlang::sym(tidy_omic$design$sample_pk) := cluster_orders$columns
         ) %>%
-          dplyr::mutate(order = 1:dplyr::n()),
+          dplyr::mutate(order = seq_len(dplyr::n())),
         by = tidy_omic$design$sample_pk
       ) %>%
       dplyr::arrange(order) %>%
@@ -564,13 +597,14 @@ hclust_tidy_omic <- function(
 
   updated_tidy_data <- tidy_omic$data %>%
     # order all rows and columns
-    dplyr::left_join(ordered_distinct_features %>%
-      dplyr::select(
-        !!rlang::sym(tidy_omic$design$feature_pk),
-        ordered_featureId,
-        feature_label
-      ),
-    by = tidy_omic$design$feature_pk
+    dplyr::left_join(
+      ordered_distinct_features %>%
+        dplyr::select(
+          !!rlang::sym(tidy_omic$design$feature_pk),
+          ordered_featureId,
+          feature_label
+        ),
+      by = tidy_omic$design$feature_pk
     ) %>%
     dplyr::left_join(
       ordered_distinct_samples %>%
@@ -606,7 +640,7 @@ hclust_tidy_omic <- function(
 #'
 #' @param df data.frame to cluster
 #' @param feature_pk variable uniquely defining a row
-#' @param sample_pk variable uniquely definining a sample
+#' @param sample_pk variable uniquely defining a sample
 #' @inheritParams sort_tomic
 #' @param cluster_dim rows, columns, or both
 #' @param distance_measure variable to use for computing dis-similarity
@@ -626,17 +660,15 @@ hclust_tidy_omic <- function(
 #' df <- tidyr::crossing(letters = LETTERS, numbers = 1:10) %>%
 #'   mutate(noise = rnorm(n()))
 #' hclust_order(df, "letters", "numbers", "noise", "rows")
-#'
 #' @export
 hclust_order <- function(
-  df,
-  feature_pk,
-  sample_pk,
-  value_var,
-  cluster_dim,
-  distance_measure = "dist",
-  hclust_method = "ward.D2"
-  ) {
+    df,
+    feature_pk,
+    sample_pk,
+    value_var,
+    cluster_dim,
+    distance_measure = "dist",
+    hclust_method = "ward.D2") {
   checkmate::assertDataFrame(df)
   checkmate::assertChoice(feature_pk, colnames(df))
   checkmate::assertChoice(sample_pk, colnames(df))
@@ -664,7 +696,7 @@ hclust_order <- function(
 
     # if distance cannot be computed (because of missing values) pad with
     # zeros and recalculate
-    if (class(cluster_rows) == "try-error") {
+    if (inherits(cluster_rows, "try-error")) {
       pad_matrix <- matrix(0, ncol = 2, nrow = nrow(quant_matrix))
       colnames(pad_matrix) <- c("pad1", "pad2")
       quant_matrix_pad <- cbind(quant_matrix, pad_matrix)
@@ -687,7 +719,7 @@ hclust_order <- function(
 
     # if distance cannot be computed (because of missing values) pad with zeros
     # and recalculate
-    if (class(cluster_cols) == "try-error") {
+    if (inherits(cluster_cols, "try-error")) {
       pad_matrix <- matrix(0, ncol = 2, nrow = ncol(quant_matrix))
       colnames(pad_matrix) <- c("pad1", "pad2")
       quant_matrix_pad <- cbind(t(quant_matrix), pad_matrix)
@@ -706,6 +738,14 @@ hclust_order <- function(
 }
 
 apply_hclust <- function(quant_matrix, distance_measure, hclust_method) {
+  checkmate::assertMatrix(quant_matrix)
+  if (nrow(quant_matrix) == 0) {
+    stop(quant_matrix, "contained zero rows")
+  } else if (nrow(quant_matrix) == 1) {
+    # if there is only one entry then we don't need to cluster it
+    return(list(order = 1))
+  }
+
   if (distance_measure == "dist") {
     distance_matrix <- stats::dist(quant_matrix)
   } else if (distance_measure == "corr") {
@@ -723,4 +763,133 @@ apply_hclust <- function(quant_matrix, distance_measure, hclust_method) {
   }
 
   stats::hclust(distance_matrix, method = hclust_method)
+}
+
+#' Downsample Heatmap
+#'
+#' Combine rows to speed up rendering of large heatmaps
+#'
+#' @param tidy_data The data frame from a \code{tidy_omic} object containing
+#'   ordered feature and sample primary keys defined by ordered_featureId
+#'   and ordered_sampleId.
+#' @inheritParams plot_heatmap
+#' @param design a list summarizing the design of the tidy dataset
+#' @param max_display_features aggregate and downsample distinct feature to
+#'   this number to speed to up heatmap rendering.
+#'
+#' @returns tidy_data with rows collapsed if the number of distinct features is
+#'   greater than \code{max_display_features}
+#'
+downsample_heatmap <- function(
+    tidy_data,
+    value_var,
+    design,
+    max_display_features = 1000) {
+  checkmate::assertDataFrame(tidy_data)
+  checkmate::assertChoice(value_var, colnames(tidy_data))
+  checkmate::assertNumber(max_display_features)
+
+  if (!("ordered_featureId" %in% colnames(tidy_data))) {
+    stop("ordered_featureId is a requred variable in tidy_data")
+  }
+  if (!("ordered_sampleId" %in% colnames(tidy_data))) {
+    stop("ordered_sampleId is a requred variable in tidy_data")
+  }
+
+  checkmate::assertFactor(tidy_data$ordered_featureId)
+  checkmate::assertFactor(tidy_data$ordered_sampleId)
+
+  n_features <- tidy_data %>%
+    dplyr::distinct(ordered_featureId) %>%
+    nrow()
+
+  if (n_features <= max_display_features) {
+    return(tidy_data)
+  }
+
+  # update the target number of n_features so (almost) all final features will
+  # combine the same number of orignal features
+  realized_max_display_features <- ceiling(
+    n_features / ceiling(n_features / max_display_features)
+  )
+  message(glue::glue(
+    "Downsampling {n_features} features to {realized_max_display_features}, targeting {max_display_features}"
+  ))
+
+  collapsed_rows_merges <- tibble::tibble(ordered_featureId_int = 1:n_features) %>%
+    dplyr::mutate(collapsed_row_number = rep(
+      1:max_display_features,
+      each = ceiling(n_features / max_display_features)
+    )[ordered_featureId_int])
+
+  downsampled_df <- tidy_data %>%
+    dplyr::mutate(ordered_featureId_int = as.integer(ordered_featureId)) %>%
+    dplyr::left_join(collapsed_rows_merges, by = "ordered_featureId_int")
+
+  # average value_var and take the first entry for other variables
+
+  downsampled_matrix_values <- downsampled_df %>%
+    dplyr::group_by(collapsed_row_number, ordered_sampleId) %>%
+    dplyr::summarize(
+      !!rlang::sym(value_var) := mean(!!rlang::sym(value_var)),
+      .groups = "drop"
+    )
+
+  # if there are missing values then different features will be
+  # selected for different samples
+
+  reduced_feature_attrs <- downsampled_df %>%
+    dplyr::distinct(!!!rlang::syms(
+      c("collapsed_row_number", "ordered_featureId", design$features$variable)
+    )) %>%
+    dplyr::mutate_if(is.factor, as.character) %>%
+    dplyr::group_by(collapsed_row_number) %>%
+    dplyr::summarize_all(collapse_feature_vars) %>%
+    dplyr::arrange(collapsed_row_number) %>%
+    # order featureId by collapsed_row_number
+    dplyr::mutate(ordered_featureId = factor(ordered_featureId, levels = ordered_featureId))
+
+  other_attrs <- setdiff(
+    colnames(downsampled_df),
+    c(value_var, design$features$variable, "ordered_featureId", "ordered_featureId_int")
+  )
+
+  downsampled_attributes <- downsampled_df %>%
+    dplyr::select(!!!rlang::syms(other_attrs)) %>%
+    dplyr::group_by(collapsed_row_number, ordered_sampleId) %>%
+    dplyr::slice(1) %>%
+    dplyr::ungroup() %>%
+    # add back collapsed feature attrs
+    dplyr::left_join(reduced_feature_attrs, by = "collapsed_row_number")
+
+  # check that the ordering of ordered_featureId's value are the same
+  # as collapsed_row_number
+  failed_collapses <- downsampled_attributes %>%
+    dplyr::mutate(ordered_featureId_int = as.integer(ordered_featureId)) %>%
+    dplyr::filter(ordered_featureId_int != collapsed_row_number)
+  if (nrow(failed_collapses != 0)) {
+    stop(glue::glue(
+      "{nrow(failed_collapses)} downsampled rows were misordered
+      this is unexpected behavior"
+    ))
+  }
+
+  downsampled_tidy_data <- downsampled_attributes %>%
+    # combine aggregated and downsampled entries
+    dplyr::left_join(
+      downsampled_matrix_values,
+      by = c("collapsed_row_number", "ordered_sampleId")
+    ) %>%
+    # discard collapsed_row_number since this
+    dplyr::select(!!!rlang::syms(colnames(tidy_data)))
+
+  return(downsampled_tidy_data)
+}
+
+collapse_feature_vars <- function(x) {
+  if (class(x) %in% c("character")) {
+    paste(unique(x), collapse = " & ")
+  } else {
+    x[1]
+  }
 }

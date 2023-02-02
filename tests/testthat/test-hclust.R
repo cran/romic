@@ -19,13 +19,26 @@ test_that("hclust creates sane orders - synthetic example", {
   groups <- tibble::tibble(letters = hclust_order(
     dat, "letters", "lc_letters", "value", "rows"
   )$rows) %>%
-    left_join(dat %>% distinct(mu, letters), by = "letters") %>%
-    dplyr::mutate(.entry = 1:n()) %>%
+    left_join(
+      dat %>%
+        distinct(mu, letters),
+      by = "letters"
+    ) %>%
+    dplyr::mutate(.entry = seq_len(n())) %>%
     dplyr::group_by(mu) %>%
     dplyr::summarize(val = sum(.entry))
 
   # sums of 1-2-3, 4-5-6, 7-8-9
   expect_equal(sort(groups$val), c(6, 15, 24))
+})
+
+test_that("hclust handled 1 row / column cases", {
+  df <- tidyr::crossing(letters = LETTERS, numbers = 1) %>%
+    mutate(noise = rnorm(n()))
+  hclust_orders <- hclust_order(df, "letters", "numbers", "noise", "both")
+
+  expect_length(hclust_orders$row, 26)
+  expect_length(hclust_orders$columns, 1)
 })
 
 test_that("hclust creates sane orders - real example", {

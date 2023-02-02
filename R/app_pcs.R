@@ -1,21 +1,19 @@
-#' Scatter Plot
+#' PC Plot
 #'
 #' Generate a Shiny interactive scatter plot which allows visualization of
 #' features, measurements, and samples (with principal components added).
 #'
-#' @param tidy_omic a tidy_omic object constructed from
-#'   \code{\link{create_tidy_omic}}
+#' @inheritParams tomic_to
 #'
 #' @returns A \code{shiny} app
 #'
 #' @examples
 #' if (interactive()) {
-#'   app_scatter(brauer_2008_tidy)
+#'   app_pcs(brauer_2008_tidy)
 #' }
-#'
 #' @export
-app_scatter <- function(tidy_omic) {
-  checkmate::assertClass(tidy_omic, "tidy_omic")
+app_pcs <- function(tomic) {
+  checkmate::assertClass(tomic, "tomic")
 
   shinyApp(
     ui = fluidPage(
@@ -44,35 +42,37 @@ app_scatter <- function(tidy_omic) {
           ),
         ),
         mainPanel(
-          ggplotOutput("ggplot"),
+          ggplotOutput("ggplot", default_plot_type = "bivariate"),
           dataTableOutput("selected_df")
         )
       )
     ),
     server = function(input, output, session) {
-
       # defining options available to user for sorting and filtering
-      design <- tidy_omic$design
-      feature_pk <- design$features$variable[
-        design$features$type == "feature_primary_key"
-      ]
-      sample_pk <- design$samples$variable[
-        design$samples$type == "sample_primary_key"
-      ]
+      design <- tomic$design
+
+      # create tomic from tidy_omic or triple_omic
+
+      tidy_omic <- reactive({
+        tomic_to(tomic, "tidy_omic")
+      })
 
       # call filtering module
 
-      tidy_filtered_features <- filterServer(
-        "filter_features",
-        tidy_omic,
-        "features"
-      )
+      tidy_filtered_features <- reactive({
+        req(tidy_omic())
+        tidy_filtered_features <- filterServer(
+          "filter_features",
+          tidy_omic(),
+          "features"
+        )
+      })
 
       tidy_filtered_samples <- reactive({
         req(tidy_filtered_features())
         tidy_filtered_samples <- filterServer(
           "filter_samples",
-          tidy_filtered_features(),
+          tidy_filtered_features()(),
           "samples"
         )
       })
@@ -93,17 +93,36 @@ app_scatter <- function(tidy_omic) {
       # add PCs
       featurized_tidy_omic <- reactive({
         req(tidy_filtered_samples()(), input$measurement_var)
-        add_pca_loadings(
+        add_pcs(
           tidy_filtered_samples()(),
           value_var = input$measurement_var,
           npcs = 5
         )
       })
 
-      selected_data <- reactive({
+      # reorder table design so that PCs show up at top
+      reorganized_tidy_omic <- reactive({
         req(featurized_tidy_omic())
-        ggplotServer("ggplot",
-          featurized_tidy_omic(),
+        dat <- featurized_tidy_omic()
+
+        updated_sample_design <- dplyr::bind_rows(
+          dat$design$samples %>%
+            dplyr::filter(stringr::str_detect(variable, "^PC")),
+          dat$design$samples %>%
+            dplyr::filter(!stringr::str_detect(variable, "^PC"))
+        )
+
+        dat$design$samples <- updated_sample_design
+
+        return(dat)
+      })
+
+      # create a plot and return brushed points
+      selected_data <- reactive({
+        req(reorganized_tidy_omic())
+        ggplotServer(
+          "ggplot",
+          reorganized_tidy_omic(),
           return_brushed_points = TRUE
         )
       })

@@ -15,7 +15,6 @@
 #'     value_var = "expression"
 #'   )
 #' }
-#'
 #' @export
 shiny_sort_test <- function(triple_omic, valid_sort_vars, value_var) {
   checkmate::assertClass(triple_omic, "triple_omic")
@@ -100,7 +99,6 @@ sortServer <- function(id,
     id,
     ## Below is the module function
     function(input, output, session) {
-
       # create sorting ui based on selected sort mode
 
       observe({

@@ -21,8 +21,10 @@ utils::globalVariables(c(
   "variable",
   "attribute",
   "attribute_value",
+  "collapsed_row_number",
   "n_entries",
   "entry_number",
+  "eigenvalue",
   "x",
   "x_var",
   "y",
@@ -31,6 +33,7 @@ utils::globalVariables(c(
   "feature_pk",
   "feature_label",
   "ordered_featureId",
+  "ordered_featureId_int",
   "sample_pk",
   "sample_label",
   "ordered_sampleId",
@@ -49,4 +52,3 @@ utils::globalVariables(c(
   "Sepal.Length",
   "Sepal.Width"
 ))
-

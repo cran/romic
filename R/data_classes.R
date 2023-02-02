@@ -56,28 +56,25 @@
 #'   feature_vars = "feature_group", sample_pk = "sample_id",
 #'   sample_vars = "sample_group"
 #' )
-#'
 #' @export
-create_tidy_omic <- function(
-  df,
-  feature_pk,
-  feature_vars = NULL,
-  sample_pk,
-  sample_vars = NULL,
-  omic_type_tag = "general"
-  ) {
+create_tidy_omic <- function(df,
+                             feature_pk,
+                             feature_vars = NULL,
+                             sample_pk,
+                             sample_vars = NULL,
+                             omic_type_tag = "general") {
   checkmate::assertDataFrame(df)
   checkmate::assertString(omic_type_tag)
   checkmate::assertChoice(feature_pk, colnames(df))
   stopifnot(class(feature_vars) %in% c("character", "NULL"))
-  if (class(feature_vars) != "NULL") {
+  if (!inherits(feature_vars, "NULL")) {
     stopifnot(all(feature_vars %in% colnames(df)))
     stopifnot(!(feature_pk %in% feature_vars))
   }
 
   checkmate::assertChoice(sample_pk, colnames(df))
   stopifnot(class(sample_vars) %in% c("character", "NULL"))
-  if (class(sample_vars) != "NULL") {
+  if (!inherits(sample_vars, "NULL")) {
     stopifnot(all(sample_vars %in% colnames(df)))
     stopifnot(!(sample_pk %in% sample_vars))
   }
@@ -144,8 +141,7 @@ create_tidy_omic <- function(
 #' @param fast_check if TRUE then skip some checks which are slow and that are
 #' generally only needed when a \code{tomic} object is first created.
 #'
-#' @return Error and warning messages are printed and the input tidy_omic
-#' object is returned
+#' @return 0 invisibly
 check_tidy_omic <- function(tidy_omic, fast_check = TRUE) {
   checkmate::assertClass(tidy_omic, "tidy_omic")
   checkmate::assertLogical(fast_check, len = 1)
@@ -177,20 +173,20 @@ check_tidy_omic <- function(tidy_omic, fast_check = TRUE) {
   }
 
   if (!fast_check) {
-
     # check that each measurement is uniquely defined by its feature
     # and sample keys
 
-    measurements_not_unique <- tidy_omic$data %>%
-      dplyr::count(
+    unique_measurement_keys <- tidy_omic$data %>%
+      dplyr::distinct(
         !!rlang::sym(tidy_omic$design$feature_pk),
         !!rlang::sym(tidy_omic$design$sample_pk)
-      ) %>%
-      dplyr::filter(n > 1)
+      )
 
-    if (nrow(measurements_not_unique) != 0) {
+    n_degenerate_keys <- nrow(tidy_omic$data) - nrow(unique_measurement_keys)
+
+    if (n_degenerate_keys != 0) {
       stop(glue::glue(
-        "{nrow(measurements_not_unique)} measurements were present multiple times with
+        "{nrow(n_degenerate_keys)} measurements were present multiple times with
         the same feature and sample primary keys"
       ))
     }
@@ -333,17 +329,13 @@ check_tidy_omic <- function(tidy_omic, fast_check = TRUE) {
 #'   measurement_df, feature_df, sample_df,
 #'   "feature_id", "sample_id"
 #' )
-#'
 #' @export
-create_triple_omic <- function(
-  measurement_df,
-  feature_df = NULL,
-  sample_df = NULL,
-  feature_pk,
-  sample_pk,
-  omic_type_tag = "general"
-  ) {
-
+create_triple_omic <- function(measurement_df,
+                               feature_df = NULL,
+                               sample_df = NULL,
+                               feature_pk,
+                               sample_pk,
+                               omic_type_tag = "general") {
   # testing
 
   checkmate::assertClass(measurement_df, "data.frame")
@@ -441,8 +433,7 @@ create_triple_omic <- function(
 #'   \code{\link{create_triple_omic}}
 #' @inheritParams check_tidy_omic
 #'
-#' @return Error and warning messages are printed and the input tidy_omic
-#'   object is returned
+#' @return 0 invisibly
 check_triple_omic <- function(triple_omic, fast_check = TRUE) {
   checkmate::assertClass(triple_omic, "triple_omic")
   checkmate::assertLogical(fast_check, len = 1)
@@ -473,34 +464,35 @@ check_triple_omic <- function(triple_omic, fast_check = TRUE) {
 
   features_features <- triple_omic$features[[triple_omic$design$feature_pk]]
   measurements_features <- triple_omic$measurements[[
-  triple_omic$design$feature_pk
+    triple_omic$design$feature_pk
   ]]
-  if (class(features_features) != class(measurements_features)) {
+  if (!all(class(features_features) == class(measurements_features))) {
     stop(glue::glue(
       "{triple_omic$design$feature_pk} classes differ between the features
         and measurements table"
     ))
   }
-  if (class(features_features) %in% c("factor", "ordered")) {
+  if (any(class(features_features) %in% c("factor", "ordered"))) {
     checkmate::checkFactor(features_features, levels(measurements_features))
   }
 
   samples_samples <- triple_omic$samples[[triple_omic$design$sample_pk]]
-  measurements_samples <- triple_omic$measurements[[triple_omic$design$sample_pk]]
-  if (class(samples_samples) != class(measurements_samples)) {
+  measurements_samples <- triple_omic$measurements[[
+    triple_omic$design$sample_pk
+  ]]
+  if (!all(class(samples_samples) == class(measurements_samples))) {
     stop(glue::glue(
       "{triple_omic$design$sample_pk} classes differ between the samples
         and measurements table"
     ))
   }
-  if (class(samples_samples) %in% c("factor", "ordered")) {
+  if (any(class(samples_samples) %in% c("factor", "ordered"))) {
     checkmate::checkFactor(samples_samples, levels(measurements_samples))
   }
 
   # thorough checking
 
   if (!fast_check) {
-
     # classes match
     # one row per feature in features
 
@@ -544,6 +536,8 @@ check_triple_omic <- function(triple_omic, fast_check = TRUE) {
       ))
     }
   }
+
+  return(invisible(0))
 }
 
 #' Triple Omic to Tidy Omic
@@ -582,7 +576,6 @@ check_triple_omic <- function(triple_omic, fast_check = TRUE) {
 #'   "feature_id", "sample_id"
 #' )
 #' triple_to_tidy(triple_omic)
-#'
 #' @export
 triple_to_tidy <- function(triple_omic) {
   check_triple_omic(triple_omic)
@@ -590,10 +583,18 @@ triple_to_tidy <- function(triple_omic) {
   feature_pk <- triple_omic$design$feature_pk
   sample_pk <- triple_omic$design$sample_pk
 
+  samples_measurements <- triple_omic$samples %>%
+    dplyr::inner_join(
+      triple_omic$measurements,
+      by = sample_pk,
+      multiple = "all"
+    )
+
   tidy_output <- triple_omic$features %>%
-    dplyr::inner_join((triple_omic$samples %>%
-      dplyr::inner_join(triple_omic$measurements, by = sample_pk)),
-    by = feature_pk
+    dplyr::inner_join(
+      samples_measurements,
+      by = feature_pk,
+      multiple = "all"
     )
 
   output <- list()
@@ -621,26 +622,30 @@ triple_to_tidy <- function(triple_omic) {
 #'
 #' @examples
 #' tidy_to_triple(brauer_2008_tidy)
-#'
 #' @export
 tidy_to_triple <- function(tidy_omic) {
   check_tidy_omic(tidy_omic)
 
-  feature_pk <- tidy_omic$design$features$variable[
-    tidy_omic$design$features$type == "feature_primary_key"
-  ]
-  sample_pk <- tidy_omic$design$samples$variable[
-    tidy_omic$design$samples$type == "sample_primary_key"
-  ]
+  # `distinct()` used to return variables in the order existing in the
+  # data. Since dplyr 1.1.0, itnow returns variables in the order they
+  # were supplied. To prevent a behaviour change, we now supply the
+  # variables in data order by subsetting the original variables first.
+  vars <- names(tidy_omic$data)
+  features_vars <- intersect(vars, tidy_omic$design$features$variable)
+  samples_vars <- intersect(vars, tidy_omic$design$samples$variable)
+
+  # This has always returned the variables in supplied order because
+  # that's how `select()` orders the output
+  measurements_vars <- tidy_omic$design$measurements$variable
 
   feature_df <- tidy_omic$data %>%
-    dplyr::distinct(!!!rlang::syms(tidy_omic$design$features$variable))
+    dplyr::distinct(dplyr::across(dplyr::all_of(features_vars)))
 
   sample_df <- tidy_omic$data %>%
-    dplyr::distinct(!!!rlang::syms(tidy_omic$design$samples$variable))
+    dplyr::distinct(dplyr::across(dplyr::all_of(samples_vars)))
 
   measurement_df <- tidy_omic$data %>%
-    dplyr::select(!!!rlang::syms(tidy_omic$design$measurements$variable))
+    dplyr::select(dplyr::all_of(measurements_vars))
 
   output <- list(
     features = feature_df,
@@ -681,20 +686,17 @@ tidy_to_triple <- function(tidy_omic) {
 #'   feature_pk = "name",
 #'   feature_vars = c("BP", "MF", "systematic_name")
 #' )
-#'
 #' @export
-convert_wide_to_tidy_omic <- function(
-  wide_df,
-  feature_pk,
-  feature_vars = NULL,
-  sample_var = "sample",
-  measurement_var = "abundance",
-  omic_type_tag = "general"
-  ) {
+convert_wide_to_tidy_omic <- function(wide_df,
+                                      feature_pk,
+                                      feature_vars = NULL,
+                                      sample_var = "sample",
+                                      measurement_var = "abundance",
+                                      omic_type_tag = "general") {
   checkmate::assertDataFrame(wide_df)
   checkmate::assertChoice(feature_pk, colnames(wide_df))
   stopifnot(class(feature_vars) %in% c("character", "NULL"))
-  if (class(feature_vars) != "NULL") {
+  if (!inherits(feature_vars, "NULL")) {
     stopifnot(all(feature_vars %in% colnames(wide_df)))
     stopifnot(!(feature_pk %in% feature_vars))
   }
@@ -723,7 +725,7 @@ convert_wide_to_tidy_omic <- function(
   # test whether unique_feature_variable is really unique
   grouped_by_unique_var <- wide_df %>%
     dplyr::group_by(!!rlang::sym(feature_pk)) %>%
-    dplyr::mutate(entry_number = 1:dplyr::n())
+    dplyr::mutate(entry_number = seq_len(dplyr::n()))
 
   if (sum(grouped_by_unique_var$entry_number != 1) == 0) {
     grouped_by_unique_var <- grouped_by_unique_var %>%
@@ -817,7 +819,6 @@ convert_wide_to_tidy_omic <- function(
 #' @examples
 #'
 #' tomic_to(brauer_2008_tidy, "triple_omic")
-#'
 #' @export
 tomic_to <- function(tomic, to_class) {
   checkmate::assertClass(tomic, "tomic")
@@ -856,7 +857,6 @@ tomic_to <- function(tomic, to_class) {
 #'
 #' @examples
 #' check_tomic(brauer_2008_triple)
-#'
 #' @export
 check_tomic <- function(tomic, fast_check = TRUE) {
   checkmate::assertClass(tomic, "tomic")

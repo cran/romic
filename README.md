@@ -1,13 +1,20 @@
 ROMIC standardizes the formatting of genomic data to open up general visualizations approaches which can be used for exploratory data analysis (EDA).
 
 <!-- badges: start -->
+[![CRAN
+status](https://www.r-pkg.org/badges/version/romic)](https://cran.r-project.org/package=romic)
 [![R build status](https://github.com/calico/romic/workflows/R-CMD-check/badge.svg)](https://github.com/calico/romic/actions)
-[![R-CMD-check](https://github.com/calico/romic/workflows/R-CMD-check/badge.svg)](https://github.com/calico/romic/actions)
 <!-- badges: end -->
 
 ## Package Setup
 
-To install *romic* run the following code in R:
+To install *romic* from CRAN, run the following code in R:
+
+```r
+install.packages("romic")
+```
+
+If you'd like to use the most current version of the package, run the following instead:
 
 ```r 
 install.packages("remotes")
@@ -18,9 +25,11 @@ remotes::install_github(
   )
 ```
 
+And, check out romic's [pkgdown site](https://calico.github.io/romic/index.html) for organized documentation.
+
 # Concept
 
-![Romic Logo](https://github.com/calico/romic/blob/master/assets/romic_art/romic.png)
+![Romic Logo](https://github.com/calico/romic/blob/main/assets/romic_art/romic.png)
 
 Romic structures high-dimensional 'omic datasets using a flexible format that can easily be modified using tidyverse-like verbs and visualized using ggplot. These operations can be dynamically applied using romic's shiny applications and modules to support exploratory data analysis and summarize results.
 
@@ -48,7 +57,7 @@ Romic structures high-dimensional 'omic datasets using a flexible format that ca
   - This representation is powerful because feature- or sample-level attributes can be directly manipulated, and attributes of interest can be added to measurements on demand.
   - The major downside of this representation is the need for a more complex list data structure and the need to perform joins to pull in relevant information.
 
-![Romic Functions](https://github.com/calico/romic/blob/master/assets/romic_summary.png)
+![Romic Functions](https://github.com/calico/romic/blob/main/assets/romic_summary.png)
 
 Romic harnesses the tidy and the triple omic representations through the **tidy_omic** and **triple_omic** S3 classes. These formats each have their own pros and cons, and one is generally better than the other depending on the task. Taking advantage of this fact, tidy and triple omic objects can readily be interconverted by tracking a dataset's **design**.
 
@@ -66,7 +75,7 @@ Since tidy_omic and triple_omic representation can readily be inter-converted, m
 
 Tidy and triple omic objects' core data are tables that can be directly manipulated and updated using conventional means (as long as the design is kept up to date). But, romic also includes methods which simplify working with this format and applying some common manipulations of high-dimensional data. Tidy and triple omics' core data are "tall data", so romic takes advantage of the tidyverse suite of packages for working with tall tabular data. Two common operations for manipulating tidy data are filtering and mutating results.
 
-**filter_tomic** filters any table in a triple_omic to a range of values, values of interest, or based on a quosure (**filter_tomic**). Mutates are more varied, and include centering measurements (**center_tomic**), ordering features or samples as factors (**sort_tomic**) and adding lower-dimensional sample embedding (**add_pca_loadings**)
+**filter_tomic** filters any table in a triple_omic to a range of values, values of interest, or based on a quosure (**filter_tomic**). Mutates are more varied, and include centering measurements (**center_tomic**), ordering features or samples as factors (**sort_tomic**) and adding lower-dimensional sample embedding (**add_pcs**)
 
 ## Visualizations
 

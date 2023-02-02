@@ -16,14 +16,11 @@
 #'     value_var = "expression"
 #'   )
 #' }
-#'
 #' @export
-shiny_organize_test <- function(
-  tidy_omic,
-  feature_vars,
-  sample_vars,
-  value_var
-  ) {
+shiny_organize_test <- function(tidy_omic,
+                                feature_vars,
+                                sample_vars,
+                                value_var) {
   checkmate::assertClass(tidy_omic, "tidy_omic")
 
   shinyApp(
@@ -102,12 +99,11 @@ organizeInput <- function(id) {
 #'
 #' @export
 organizeServer <- function(
-  id,
-  tidy_omic,
-  feature_vars,
-  sample_vars,
-  value_var
-  ) {
+    id,
+    tidy_omic,
+    feature_vars,
+    sample_vars,
+    value_var) {
   checkmate::assertClass(tidy_omic, "tomic")
 
   moduleServer(

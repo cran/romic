@@ -11,7 +11,7 @@
 #'
 #' if (interactive()) {
 #'   shiny_ggbiv_test(
-#'     add_pca_loadings(brauer_2008_triple, npcs = 5),
+#'     add_pcs(brauer_2008_triple, npcs = 5),
 #'     plot_table = "samples"
 #'   )
 #'   shiny_ggbiv_test(
@@ -19,7 +19,6 @@
 #'     plot_table = "measurements"
 #'   )
 #' }
-#'
 #' @export
 shiny_ggbiv_test <- function(tomic, plot_table = "samples") {
   checkmate::assertClass(tomic, "tomic")
@@ -66,26 +65,20 @@ ggBivOutput <- function(id, return_brushed_points = FALSE) {
       shiny::column(
         4,
         shiny::selectInput(ns("x_var"), "X-axis", choices = NULL),
-        shiny::selectInput(ns("y_var"), "Y-axis", choices = NULL)
-      ),
-      shiny::column(
-        4,
+        shiny::selectInput(ns("y_var"), "Y-axis", choices = NULL),
         shiny::checkboxInput(
           ns("use_color"),
           label = "Color values?",
-          value = TRUE
+          value = FALSE
         ),
         shiny::uiOutput(ns("color_ui"))
-      ),
-      shiny::column(
-        3,
-        plotsaverInput(ns("ggsave"))
       )
     ),
     shiny::plotOutput(
       ns("ggplot"),
       brush = brush_config(return_brushed_points, "xy", ns)
-    )
+    ),
+    plotsaverInput(ns("ggsave"), ui_format = "wide")
   )
 }
 
@@ -244,6 +237,9 @@ ggBivServer <- function(id, tomic, plot_table, return_brushed_points = FALSE) {
 #' @param x_var x-axis variable
 #' @param y_var y-axis variable
 #' @param color_var coloring variable (NULL to suppress coloring)
+#' @param shape_var shape variable (NULL to suppress shape)
+#' @param alpha_var alpha variable or numeric for constant alpha (NULL to suppress alpha)
+#' @param size_var size variable or integer/numeric for constant size (NULL to suppress size)
 #'
 #' @return a ggplot2 grob
 #'
@@ -251,21 +247,37 @@ ggBivServer <- function(id, tomic, plot_table, return_brushed_points = FALSE) {
 #' library(dplyr)
 #'
 #' brauer_augmented <- brauer_2008_tidy %>%
-#'   add_pca_loadings(npcs = 5) %>%
+#'   add_pcs(npcs = 5) %>%
 #'   tomic_to("triple_omic")
 #'
 #' tomic_table <- brauer_augmented$samples
-#' plot_bivariate(tomic_table, "PC1", "PC2", "nutrient")
+#' plot_bivariate(tomic_table, "PC1", "PC2", "nutrient", "nutrient", 0.5, 10)
 #' plot_bivariate(tomic_table, "PC1", "PC2", NULL)
 #' plot_bivariate(tomic_table, "nutrient", "PC2", "nutrient")
-#'
 #' @export
-plot_bivariate <- function(tomic_table, x_var, y_var, color_var = NULL) {
+plot_bivariate <- function(tomic_table, x_var, y_var, color_var = NULL, shape_var = NULL, alpha_var = NULL, size_var = NULL) {
   checkmate::assertClass(tomic_table, "data.frame")
-  checkmate::assertChoice(x_var, colnames(tomic_table))
-  checkmate::assertChoice(y_var, colnames(tomic_table))
-  if (class(color_var) != "NULL") {
-    checkmate::assertChoice(color_var, colnames(tomic_table))
+  # allow for partial string matching
+  x_var <- var_partial_match(x_var, tomic_table)
+  y_var <- var_partial_match(y_var, tomic_table)
+
+  aes_args <- list(
+    x = rlang::sym(x_var),
+    y = rlang::sym(y_var)
+  )
+
+  if (class(tomic_table[[x_var]]) %in% c("numeric", "integer")) {
+    plot_type <- "scatter"
+  } else {
+    plot_type <- "boxplot"
+  }
+
+  # setup list for fixed aesthetics, e.g., size or alpha
+  geom_dots <- list()
+
+  # color
+  if (!inherits(color_var, "NULL")) {
+    color_var <- var_partial_match(color_var, tomic_table)
 
     if (!(class(tomic_table[[color_var]]) %in% c("numeric", "integer"))) {
       distinct_color_levels <- unique(tomic_table[[color_var]])
@@ -278,37 +290,72 @@ plot_bivariate <- function(tomic_table, x_var, y_var, color_var = NULL) {
         return(overflow_plot)
       }
     }
+
+    if (plot_type == "scatter") {
+      aes_args$color = rlang::sym(color_var)
+    } else {
+      aes_args$fill = rlang::sym(color_var)
+    }
   }
+
+  # shape
+  if (!inherits(shape_var, "NULL")) {
+    shape_var <- var_partial_match(color_var, tomic_table)
+    aes_args$shape <- rlang::sym(shape_var)
+  }
+
+  # alpha
+  if (!inherits(alpha_var, "NULL")) {
+    if (inherits(alpha_var, "numeric")) {
+      checkmate::assertNumber(alpha_var, lower = 0, upper = 1)
+      geom_dots$alpha <- alpha_var
+    } else {
+      alpha_var <- var_partial_match(alpha_var, tomic_table)
+      aes_args$alpha <- rlang::sym(alpha_var)
+    }
+  }
+
+  # size
+  # by default ignore size as a number for specifying constant size
+  if (!inherits(size_var, "NULL")) {
+    if (class(size_var) %in% c("numeric", "integer")) {
+      geom_dots$size <- size_var
+    } else {
+      # see if size matches one of the df's vars
+      size_var <- var_partial_match(size_var, tomic_table)
+      aes_args$size <- rlang::sym(size_var)
+    }
+  }
+
+  # map requiredd and optional inputs to aesthetics
+  running_aes <- do.call(ggplot2::aes, aes_args)
 
   # determine plot type from variable classes
 
-  if (class(tomic_table[[x_var]]) %in% c("numeric", "integer")) {
-    grob <- ggplot(tomic_table, aes_string(x = x_var, y = y_var)) +
+  if (plot_type == "scatter") {
+
+    # setup plot call with fixed aesthetics
+    plot_call <- do.call(ggplot2::geom_point, geom_dots)
+    grob <- ggplot(tomic_table, running_aes) +
+      plot_call +
       theme_bw()
 
-    if (is.null(color_var)) {
-      grob <- grob +
-        geom_point(size = 4)
-    } else {
-      grob <- grob +
-        geom_point(aes_string(color = color_var), size = 4)
-    }
+  } else if (plot_type == "boxplot") {
+
+    plot_call <- do.call(ggplot2::geom_boxplot, geom_dots)
+    grob <- ggplot(tomic_table, running_aes) +
+      plot_call +
+      theme_bw() +
+      theme(axis.text = element_text(angle = 90, hjust = 1))
   } else {
-    grob <- ggplot(tomic_table, aes_string(x = x_var, y = y_var)) +
-      theme_bw()
-
-    if (is.null(color_var)) {
-      grob <- grob +
-        geom_boxplot()
-    } else {
-      grob <- grob +
-        geom_boxplot(aes_string(fill = color_var)) +
-        theme(axis.text = element_text(angle = 90, hjust = 1))
-    }
+    stop ("undefined plot_type")
   }
 
   return(grob)
 }
+
+
+
 
 invalid_grob <- function(message) {
   ggplot(data.frame(x = 0, y = 0), aes(x = x, y = y)) +
