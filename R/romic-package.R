@@ -1,8 +1,3 @@
-#' \code{romic} package
-#'
-#' @docType package
-#' @name romic
-#'
 #' @description 'romic' represents high-dimensional data as tables of features,
 #'   samples and measurements, and a design list for tracking the meaning of
 #'   individual variables. Using this format, filtering, normalization, and
@@ -11,8 +6,15 @@
 #'   interactive shiny apps for exploratory data analysis such as an
 #'   interactive heatmap.
 #'
+#' @keywords internal
+"_PACKAGE"
+
+## usethis namespace: start
 #' @importFrom dplyr %>%
 #' @importFrom rlang :=
+## usethis namespace: end
+NULL
+
 #' @import ggplot2
 #' @import shiny
 utils::globalVariables(c(

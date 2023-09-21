@@ -10,6 +10,7 @@
 #'   variables (or NULL if there are no additional variables)
 #' @param sample_vars a character vector of additional sample-level variables
 #'   (or NULL if there are no additional variables)
+#' @param verbose extra reporting messages
 #'
 #' @returns An S3 \code{tidy_omic}/\code{tomic} object built on a \code{list}:
 #'  \describe{
@@ -57,12 +58,16 @@
 #'   sample_vars = "sample_group"
 #' )
 #' @export
-create_tidy_omic <- function(df,
-                             feature_pk,
-                             feature_vars = NULL,
-                             sample_pk,
-                             sample_vars = NULL,
-                             omic_type_tag = "general") {
+create_tidy_omic <- function(
+    df,
+    feature_pk,
+    feature_vars = NULL,
+    sample_pk,
+    sample_vars = NULL,
+    omic_type_tag = "general",
+    verbose = TRUE
+    ) {
+
   checkmate::assertDataFrame(df)
   checkmate::assertString(omic_type_tag)
   checkmate::assertChoice(feature_pk, colnames(df))
@@ -81,11 +86,12 @@ create_tidy_omic <- function(df,
 
   n_var_uses <- table(c(feature_pk, feature_vars, sample_pk, sample_vars))
   if (any(n_var_uses > 1)) {
-    stop(paste0(
-      paste(names(n_var_uses)[n_var_uses > 1], collapse = ", "),
-      ": were assigned to multiple classes of variables
-      each variable should only belong to one class"
-    ))
+    invalid_vars <- names(n_var_uses)[n_var_uses > 1]
+
+    cli::cli_abort(
+      "{paste(invalid_vars, collapse = ', ')} were assigned to multiple
+      classes of variables each variable should only belong to one class"
+    )
   }
 
   # determine the classes of all variables in df
@@ -124,6 +130,19 @@ create_tidy_omic <- function(df,
   output$design$feature_pk <- feature_pk
   output$design$sample_pk <- sample_pk
 
+  if (verbose) {
+    measurement_vars <- setdiff(
+      output$design$measurements$variable,
+      c(feature_pk, sample_pk)
+      )
+
+    message(glue::glue(
+      "{length(measurement_vars)} measurement variables were defined as the
+      left overs from the specified feature and sample varaibles:
+      {paste(measurement_vars, collapse = ', ')}"
+    ))
+  }
+
   class(output) <- c("tidy_omic", "tomic", omic_type_tag)
   check_tidy_omic(output, fast_check = FALSE)
 
@@ -143,10 +162,14 @@ create_tidy_omic <- function(df,
 #'
 #' @return 0 invisibly
 check_tidy_omic <- function(tidy_omic, fast_check = TRUE) {
+
   checkmate::assertClass(tidy_omic, "tidy_omic")
   checkmate::assertLogical(fast_check, len = 1)
   # check design
   check_design(tidy_omic)
+
+  feature_pk <- tidy_omic$design$feature_pk
+  sample_pk <- tidy_omic$design$sample_pk
 
   # check that design matches data
 
@@ -177,17 +200,31 @@ check_tidy_omic <- function(tidy_omic, fast_check = TRUE) {
     # and sample keys
 
     unique_measurement_keys <- tidy_omic$data %>%
-      dplyr::distinct(
-        !!rlang::sym(tidy_omic$design$feature_pk),
-        !!rlang::sym(tidy_omic$design$sample_pk)
-      )
+      dplyr::count(!!rlang::sym(feature_pk), !!rlang::sym(sample_pk))
 
     n_degenerate_keys <- nrow(tidy_omic$data) - nrow(unique_measurement_keys)
 
     if (n_degenerate_keys != 0) {
+
+      degenerate_key_examples <- unique_measurement_keys %>%
+        dplyr::filter(n > 1) %>%
+        dplyr::slice(1:pmin(10, n_degenerate_keys)) %>%
+        dplyr::arrange(!!rlang::sym(feature_pk), !!rlang::sym(sample_pk)) %>%
+        dplyr::mutate(
+          combined_label = paste(
+            "feature =",
+            {!!rlang::sym(feature_pk)},
+            "; sample =",
+            {!!rlang::sym(sample_pk)}
+            ))
+
       stop(glue::glue(
-        "{nrow(n_degenerate_keys)} measurements were present multiple times with
-        the same feature and sample primary keys"
+      "{n_degenerate_keys} measurements were present multiple times with
+      the same feature and sample primary keys
+
+      For example:
+
+      {paste(degenerate_key_examples$combined_label, collapse = '\n\t')}"
       ))
     }
 
@@ -344,13 +381,13 @@ create_triple_omic <- function(measurement_df,
   # features
   stopifnot(length(feature_pk) == 1, feature_pk %in% colnames(measurement_df))
   if (!is.null(feature_df)) {
-    stopifnot("data.frame" %in% class(measurement_df))
+    stopifnot("data.frame" %in% class(feature_df))
     stopifnot(feature_pk %in% colnames(feature_df))
   }
 
   # samples
   stopifnot(length(sample_pk) == 1, sample_pk %in% colnames(measurement_df))
-  if (!is.null(sample_pk)) {
+  if (!is.null(sample_df)) {
     stopifnot("data.frame" %in% class(sample_df))
     stopifnot(sample_pk %in% colnames(sample_df))
   }
@@ -359,14 +396,14 @@ create_triple_omic <- function(measurement_df,
   if (is.null(feature_df)) {
     feature_df <- measurement_df %>%
       dplyr::ungroup() %>%
-      dplyr::distinct_(feature_pk)
+      dplyr::distinct(!!rlang::sym(feature_pk))
   }
 
   # initialize default sample_df if one is not provided
   if (is.null(sample_df)) {
     sample_df <- measurement_df %>%
       dplyr::ungroup() %>%
-      dplyr::distinct_(sample_pk)
+      dplyr::distinct(!!rlang::sym(sample_pk))
   }
 
   # Format tables as tibbles
@@ -669,6 +706,7 @@ tidy_to_triple <- function(tidy_omic) {
 #' @inheritParams create_tidy_omic
 #' @param sample_var variable name to use for samples
 #' @param measurement_var variable name to use for measurements
+#' @inheritParams create_tidy_omic
 #'
 #' @returns A \code{tidy_omic} object as produced by \code{create_tidy_omic}.
 #'
@@ -687,12 +725,16 @@ tidy_to_triple <- function(tidy_omic) {
 #'   feature_vars = c("BP", "MF", "systematic_name")
 #' )
 #' @export
-convert_wide_to_tidy_omic <- function(wide_df,
-                                      feature_pk,
-                                      feature_vars = NULL,
-                                      sample_var = "sample",
-                                      measurement_var = "abundance",
-                                      omic_type_tag = "general") {
+convert_wide_to_tidy_omic <- function(
+  wide_df,
+  feature_pk,
+  feature_vars = NULL,
+  sample_var = "sample",
+  measurement_var = "abundance",
+  omic_type_tag = "general",
+  verbose = TRUE
+  ) {
+
   checkmate::assertDataFrame(wide_df)
   checkmate::assertChoice(feature_pk, colnames(wide_df))
   stopifnot(class(feature_vars) %in% c("character", "NULL"))
@@ -703,6 +745,7 @@ convert_wide_to_tidy_omic <- function(wide_df,
   checkmate::assertString(sample_var)
   checkmate::assertString(measurement_var)
   checkmate::assertString(omic_type_tag)
+  checkmate::assertLogical(verbose, len = 1)
 
   # test other provided variables
   reserved_variable_names <- c(
@@ -798,7 +841,8 @@ convert_wide_to_tidy_omic <- function(wide_df,
     feature_pk = feature_pk,
     feature_vars = feature_vars,
     sample_pk = sample_var,
-    omic_type_tag = omic_type_tag
+    omic_type_tag = omic_type_tag,
+    verbose = verbose
   )
 
   return(tidy_omic)
@@ -872,3 +916,96 @@ check_tomic <- function(tomic, fast_check = TRUE) {
 
   return(invisible(0))
 }
+
+#' Get Tomic Table
+#'
+#' Extract one of the specific tables from a tomic object
+#'
+#' @inheritParams tomic_to
+#' @param table_type The type of table to extract from the \code{tomic} object.
+#' \describe{
+#'   \item{tidy}{one row per measurements with feature and sample attributes added. Equivalent to the $data field of a tidy omic object}
+#'   \item{measurements}{one row per measurements defined a feature and sample foreign key. Equivalent to the $measurements field of a triple omic object}
+#'   \item{features}{one row per feature defined by a feature primary key. Equivalent to the $features field of a triple omic object}
+#'   \item{samples}{one row per sample defined by a sample primary key. Equivalent to the $samples field of a triple omic object}
+#' }
+#'
+#' @returns a tibble matching the \code{table_type} of the \code{tomic} object
+#'
+#' @export
+#'
+#' @examples
+#' get_tomic_table(brauer_2008_triple, "samples")
+#' get_tomic_table(brauer_2008_tidy, "features")
+get_tomic_table <- function(tomic, table_type) {
+
+  checkmate::assertClass(tomic, "tomic")
+  valid_table_types <- c("tidy", "measurements", "features", "samples")
+  checkmate::assertChoice(table_type, valid_table_types)
+
+  if (table_type == "tidy") {
+    # convert to tidy-omic if needed
+    tidy_omic <- tomic_to(tomic, "tidy_omic")
+    return(tidy_omic$data)
+
+  } else if (table_type %in% c("measurements", "features", "samples")) {
+
+    triple_omic <- tomic_to(tomic, "triple_omic")
+    return(triple_omic[[table_type]])
+
+  } else {
+    stop ("This case should not be reached - please contact a dev")
+  }
+}
+
+
+get_identifying_keys <- function(tomic, table) {
+  checkmate::assertClass(tomic, "tomic")
+  checkmate::assertChoice(table, c("features", "samples", "measurements"))
+
+  if (table == "features") {
+    ids <- tomic$design$feature_pk
+  } else if (table == "samples") {
+    ids <- tomic$design$sample_pk
+  } else if (table == "measurements") {
+    ids <- c(tomic$design$feature_pk, tomic$design$sample_pk)
+  } else {
+    stop(glue::glue("{table} is not a valid choice"))
+  }
+
+  return(ids)
+}
+
+#' Infer Tomic Table Type
+#'
+#' From a tomic_table, choose whether it reflects features, samples or
+#'   measurements
+#'
+#' @inheritParams tomic_to
+#' @inheritParams plot_bivariate
+#'
+#' @returns features, samples or measurements
+infer_tomic_table_type <- function(tomic, tomic_table) {
+  checkmate::assertClass(tomic, "tomic")
+  checkmate::assertClass(tomic_table, "data.frame")
+
+  feature_pk <- tomic$design$feature_pk
+  sample_pk <- tomic$design$sample_pk
+  tomic_table_vars <- colnames(tomic_table)
+
+  table_type <- dplyr::case_when(
+    feature_pk %in% tomic_table_vars && sample_pk %in% tomic_table_vars ~ "measurements",
+    feature_pk %in% tomic_table_vars ~ "features",
+    sample_pk %in% tomic_table_vars ~ "samples"
+  )
+
+  if (is.na(table_type)) {
+    stop(
+      "based on the \"tomic\" primary keys, tomic_table doesn't appear to
+       be features, samples or measurements"
+    )
+  }
+
+  return(table_type)
+}
+
