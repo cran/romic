@@ -115,9 +115,11 @@ ggplotServer <- function(id, tomic, return_brushed_points = FALSE) {
             ggBivOutput(ns("biv_grob"), return_brushed_points)
           })
         } else {
-          stop(
-            "invalid plot_type, valid types are \"univariate\" and \"bivariate\""
-          )
+          cli::cli_abort(c(
+            "Invalid plot type",
+            "x" = "{.val {plot_type}} is not a valid {.arg plot_type}",
+            "i" = "Valid types: {.val univariate} or {.val bivariate}"
+          ))
         }
       })
 
@@ -136,9 +138,11 @@ ggplotServer <- function(id, tomic, return_brushed_points = FALSE) {
           return_brushed_points
         )
       } else {
-        stop(
-          "invalid plot_type, valid types are \"univariate\" and \"bivariate\""
-        )
+        cli::cli_abort(c(
+          "Invalid plot type",
+          "x" = "{.val {plot_type}} is not a valid {.arg plot_type}",
+          "i" = "Valid types: {.val univariate} or {.val bivariate}"
+        ))
       }
 
       return(selected_data)

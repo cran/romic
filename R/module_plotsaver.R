@@ -93,7 +93,7 @@ plotsaverInput <- function(id, ui_format = "tall") {
       )
     )
   } else {
-    stop("undefined format")
+    cli::cli_abort("undefined format")
   }
 }
 

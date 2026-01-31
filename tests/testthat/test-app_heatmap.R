@@ -16,7 +16,6 @@ test_that("Create heatmap", {
     value_var = "expression",
     change_threshold = 5,
     cluster_dim = "rows",
-    plot_type = "grob",
     distance_measure = "corr"
   )
   expect_s3_class(grob, "ggplot")
@@ -26,19 +25,7 @@ test_that("Create heatmap", {
     value_var = "expression",
     change_threshold = 5,
     cluster_dim = "both",
-    plot_type = "grob",
     distance_measure = "dist"
   )
   expect_s3_class(grob, "ggplot")
-
-  plt <- plot_heatmap(
-    tomic = tomic,
-    value_var = "expression",
-    change_threshold = 5,
-    cluster_dim = "rows",
-    plot_type = "plotly",
-    distance_measure = "corr"
-  )
-  expect_s3_class(plt, "plotly")
-
 })

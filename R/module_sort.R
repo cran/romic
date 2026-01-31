@@ -88,11 +88,13 @@ sortInput <- function(id, sort_table) {
 #' @returns A sorted \code{tomic} object.
 #'
 #' @export
-sortServer <- function(id,
-                       tomic,
-                       sort_table,
-                       valid_sort_vars = NULL,
-                       value_var = NULL) {
+sortServer <- function(
+  id,
+  tomic,
+  sort_table,
+  valid_sort_vars = NULL,
+  value_var = NULL
+  ) {
   checkmate::assertClass(tomic, "tomic")
 
   moduleServer(
@@ -117,7 +119,11 @@ sortServer <- function(id,
               multiple = TRUE
             )
           } else {
-            stop("Invalid sort mode")
+            cli::cli_abort(c(
+              "Invalid sort mode",
+              "x" = "{.val {sort_mode}} is not a valid sort mode",
+              "i" = "Valid options: {.val hclust} or {.val category}"
+            ))
           }
         })
       })
@@ -142,7 +148,11 @@ sortServer <- function(id,
             sort_variables = input$sample_sorts
           )
         } else {
-          stop("Invalid sort mode")
+          cli::cli_abort(c(
+            "Invalid sort mode",
+            "x" = "{.val {sort_mode}} is not a valid sort mode",
+            "i" = "Valid options: {.val hclust} or {.val category}"
+          ))
         }
       })
 

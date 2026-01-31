@@ -3,7 +3,7 @@ ROMIC standardizes the formatting of genomic data to open up general visualizati
 <!-- badges: start -->
 [![CRAN
 status](https://www.r-pkg.org/badges/version/romic)](https://cran.r-project.org/package=romic)
-[![R build status](https://github.com/calico/romic/workflows/R-CMD-check/badge.svg)](https://github.com/calico/romic/actions)
+[![R build status](https://github.com/shackett/romic/workflows/R-CMD-check/badge.svg)](https://github.com/shackett/romic/actions)
 <!-- badges: end -->
 
 ## Package Setup
@@ -20,16 +20,18 @@ If you'd like to use the most current version of the package, run the following 
 install.packages("remotes")
 
 remotes::install_github(
-  "calico/romic",
+  "shackett/romic",
   dependencies = TRUE
-  )
+)
 ```
 
-And, check out romic's [pkgdown site](https://calico.github.io/romic/index.html) for organized documentation.
+The [blog post about romic](https://www.shackett.org/romic/) is an accessible introduction. Also, check out romic's [pkgdown site](https://www.shackett.org/external/romic-docs/) for organized documentation. 
+
+Older versions of romic are available on the [Calico Github](https://github.com/calico/romic).
 
 # Concept
 
-![Romic Logo](https://github.com/calico/romic/blob/main/assets/romic_art/romic.png)
+![romic Logo](https://github.com/shackett/romic/blob/main/assets/romic_art/romic.png)
 
 Romic structures high-dimensional 'omic datasets using a flexible format that can easily be modified using tidyverse-like verbs and visualized using ggplot. These operations can be dynamically applied using romic's shiny applications and modules to support exploratory data analysis and summarize results.
 
@@ -57,7 +59,7 @@ Romic structures high-dimensional 'omic datasets using a flexible format that ca
   - This representation is powerful because feature- or sample-level attributes can be directly manipulated, and attributes of interest can be added to measurements on demand.
   - The major downside of this representation is the need for a more complex list data structure and the need to perform joins to pull in relevant information.
 
-![Romic Functions](https://github.com/calico/romic/blob/main/assets/romic_summary.png)
+![romic Functions](https://github.com/shackett/romic/blob/main/assets/romic_summary.png)
 
 Romic harnesses the tidy and the triple omic representations through the **tidy_omic** and **triple_omic** S3 classes. These formats each have their own pros and cons, and one is generally better than the other depending on the task. Taking advantage of this fact, tidy and triple omic objects can readily be interconverted by tracking a dataset's **design**.
 
@@ -99,3 +101,5 @@ The main two apps are:
 
 - **app_heatmap** Filter a tomic to data of interest, separate features or samples based on facets and organize results based on categories or hierarchical clustering.
 - **app_flow** Create a bivariate or univariate plot of a features, samples or measurements, selected points of interest and use this to filter or tag the tomic data your working with. Then you can use this object going forward. This makes it easy to selected features of interest and then look at their patterns of variation.
+
+

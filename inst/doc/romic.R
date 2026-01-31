@@ -57,8 +57,7 @@ plot_heatmap(
   filtered_brauer,
   value_var = "expression",
   change_threshold = 5,
-  cluster_dim = "rows",
-  plot_type = "grob"
+  cluster_dim = "rows"
 )
 
 ## ----univariate_plot, warning=FALSE, fig.height = 6, fig.width = 6------------

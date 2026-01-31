@@ -2,9 +2,13 @@ library(dplyr)
 
 test_that("Coercing to original classes works", {
   simple_factor <- factor(c("B", "A"), levels = c("A", "B"))
-
   # -> factor
   expect_equal(coerce_to_classes(c("B", "A"), simple_factor), simple_factor)
+
+  simple_ordered <- ordered(c("B", "A"), levels = c("A", "B"))
+  # -> ordered
+  expect_equal(coerce_to_classes(c("B", "A"), simple_ordered), simple_ordered)
+
   # should throw an error when NAs are introduced for non-NAs
   expect_error(coerce_to_classes(c("B", "A", "C"), simple_factor), "reference object")
   # -> character
@@ -34,6 +38,6 @@ test_that("Partial string matching works", {
   # non match
   expect_error(var_partial_match("highlander", mtcars), regex = "did not match")
   # too vague - 2+ matches
-  expect_error(var_partial_match("m", mtcars), regex = "2\\+ variables")
+  expect_error(var_partial_match("m", mtcars), regex = "matched 2 variables")
 })
 

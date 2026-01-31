@@ -55,9 +55,13 @@ prepare_example_datasets <- function(seed = 1234) {
       c("name", "BP", "MF", "systematic_name", "number"),
       sep = "\\|\\|"
     ) %>%
-    dplyr::mutate_each(dplyr::funs(trimws), name:systematic_name) %>%
+    dplyr::mutate(dplyr::across(name:systematic_name, trimws)) %>%
     dplyr::select(-number, -GID, -YORF, -GWEIGHT) %>%
-    tidyr::gather(sample, expression, G0.05:U0.3) %>%
+    tidyr::pivot_longer(
+      cols = G0.05:U0.3,
+      names_to = "sample",
+      values_to = "expression"
+    ) %>%
     tidyr::separate(
       sample,
       c("nutrient", "DR"),

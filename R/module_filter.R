@@ -161,7 +161,7 @@ filterServer <- function(id, tidy_omic, filter_table) {
               value = c(filter_range[1], filter_range[2])
             )
           } else {
-            stop("invalid filter_category")
+            cli::cli_abort("invalid filter_category")
           }
         }
       })
@@ -202,7 +202,7 @@ filterServer <- function(id, tidy_omic, filter_table) {
         } else if (filter_category() == "none") {
           # leave as is
         } else {
-          stop("Undefined filter type")
+          cli::cli_abort("Undefined filter type")
         }
 
         working_data

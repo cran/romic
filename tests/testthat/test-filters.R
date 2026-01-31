@@ -1,4 +1,4 @@
-test_that("Try all of the filters", {
+cli::test_that_cli("Try all of the filters", {
 
   filter_tomic(
     brauer_2008_triple,
@@ -42,24 +42,40 @@ test_that("Try all of the filters", {
     expect_equal(1)
 
   # edge cases
-  filter_tomic(
-    brauer_2008_triple,
-    filter_type = "category",
-    filter_table = "features",
-    filter_variable = "bar",
-    filter_value = "biological process unknown"
-    ) %>%
-    expect_snapshot(error = TRUE)
+  expect_snapshot(
+    filter_tomic(
+      brauer_2008_triple,
+      filter_type = "category",
+      filter_table = "features",
+      filter_variable = "bar",
+      filter_value = "biological process unknown"
+    ),
+    error = TRUE
+    )
 
-  expect_warning(
+  expect_snapshot(
     filter_tomic(
       brauer_2008_triple,
       filter_type = "quo",
       filter_table = "features",
       filter_variable = "bar",
       filter_value = rlang::quo(BP == "biological process unknown")
-    ),
-    regexp = "filter_type is quo"
+    )
   )
 
+})
+
+test_that("Validate that filtering works with invert = TRUE", {
+
+  retained_samples <- filter_tomic(
+    brauer_2008_triple,
+    filter_type = "category",
+    filter_table = "samples",
+    filter_variable = "nutrient",
+    filter_value = c("U", "L"),
+    invert = TRUE
+  )$samples
+
+  expect_equal(nrow(retained_samples), 24)
+  expect_equal(unique(retained_samples$nutrient), c("G", "N", "P", "S"))
 })

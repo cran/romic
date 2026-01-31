@@ -20,15 +20,14 @@
 #'
 #' @export
 add_pcs <- function(
-    tomic,
-    value_var = NULL,
-    center_rows = TRUE,
-    npcs = NULL,
-    missing_val_method = "drop_samples",
-    label_percent_varex = TRUE,
-    verbose = TRUE
-    ) {
-
+  tomic,
+  value_var = NULL,
+  center_rows = TRUE,
+  npcs = NULL,
+  missing_val_method = "drop_samples",
+  label_percent_varex = TRUE,
+  verbose = TRUE
+) {
   checkmate::assertClass(tomic, "tomic")
   checkmate::assertLogical(center_rows, len = 1)
   stopifnot(length(npcs) <= 1, class(npcs) %in% c("NULL", "numeric", "integer"))
@@ -38,7 +37,6 @@ add_pcs <- function(
   design <- tomic$design
   feature_pk <- design$feature_pk
   sample_pk <- design$sample_pk
-
   value_var <- value_var_handler(value_var = value_var, design)
 
   triple_omic <- tomic_to(tomic, "triple_omic") %>%
@@ -49,7 +47,6 @@ add_pcs <- function(
     )
 
   cast_formula <- stats::as.formula(paste0(feature_pk, " ~ ", sample_pk))
-
   omic_matrix <- triple_omic$measurements %>%
     reshape2::acast(formula = cast_formula, value.var = value_var)
 
@@ -60,7 +57,6 @@ add_pcs <- function(
   npcs <- round(npcs)
 
   # center
-
   if (center_rows) {
     omic_matrix <- omic_matrix - rowMeans(omic_matrix)
   }
@@ -86,9 +82,9 @@ add_pcs <- function(
 
   # find the npcs leading principal components
   pcs <- mat_svd$v[, 1:npcs, drop = FALSE]
+
   # calculate percent variance explained by PC
   colnames(pcs) <- varex_df$pc_label[1:npcs]
-
   pcs <- pcs %>%
     as.data.frame() %>%
     dplyr::as_tibble() %>%
@@ -103,7 +99,7 @@ add_pcs <- function(
 
   triple_omic$samples <- triple_omic$samples %>%
     # drop existing PCs
-    dplyr::select_at(vars(!dplyr::starts_with("PC"))) %>%
+    dplyr::select(!dplyr::starts_with("PC")) %>%
     # create a copy of the primary key to join on
     dplyr::left_join(pcs, by = sample_pk)
 
@@ -133,6 +129,8 @@ add_pcs <- function(
 #'     then drop features}
 #'   \item{impute}{Impute missing values}
 #' }
+#' @param missing_value_types Types of values to treat as missing. One or more
+#'   of "NA", "NaN" and "Inf"
 #' @inheritParams create_tidy_omic
 #'
 #' @returns A \code{tomic} object where missing values have been accounted
@@ -143,20 +141,24 @@ add_pcs <- function(
 #'
 #' @export
 remove_missing_values <- function(
-    tomic,
-    value_var = NULL,
-    missing_val_method = "drop_samples",
-    verbose = TRUE
-    ) {
+  tomic,
+  value_var = NULL,
+  missing_val_method = "drop_samples",
+  missing_value_types = c("NA", "NaN", "Inf"),
+  verbose = FALSE
+) {
   checkmate::assertClass(tomic, "tomic")
   checkmate::assertChoice(
     missing_val_method,
     c("drop_features", "drop_samples")
   )
+  checkmate::assertCharacter(missing_value_types, min.len = 1)
   checkmate::assertLogical(verbose, len = 1)
 
-  triple_omic <- tomic_to(tomic, "triple_omic")
+  VALID_MISSING_VALUE_TYPES <- c("NA", "NaN", "Inf")
+  purrr::walk(missing_value_types, checkmate::assertChoice, VALID_MISSING_VALUE_TYPES)
 
+  triple_omic <- tomic_to(tomic, "triple_omic")
   design <- tomic$design
   feature_pk <- design$feature_pk
   sample_pk <- design$sample_pk
@@ -167,7 +169,8 @@ remove_missing_values <- function(
   # find missing values of value_var
   found_missing_values <- find_triple_omic_missing_values(
     triple_omic,
-    value_var
+    value_var,
+    missing_value_types
   )
   observed_measurements <- found_missing_values$observed_measurements
   missing_values <- found_missing_values$missing_values
@@ -176,43 +179,41 @@ remove_missing_values <- function(
     if (missing_val_method == "drop_features") {
       triple_omic$measurements <- observed_measurements %>%
         dplyr::anti_join(missing_values, by = feature_pk)
-
       triple_omic <- reconcile_triple_omic(triple_omic)
     } else if (missing_val_method == "drop_samples") {
       missing_values <- missing_values %>%
         # only consider missing values where a sample has 1+ measurements
         dplyr::semi_join(observed_measurements, sample_pk)
-
       triple_omic$measurements <- observed_measurements %>%
         dplyr::anti_join(missing_values, by = feature_pk)
-
       triple_omic <- reconcile_triple_omic(triple_omic)
     } else {
-      stop(missing_val_method, " is not an implemented missing value method")
+      cli::cli_abort(c(
+        "Invalid missing value method",
+        "x" = "{.val {missing_val_method}} is not an implemented missing value method",
+        "i" = "Valid methods: {.val drop_features} or {.val drop_samples}"
+      ))
     }
   } else {
     if (verbose) {
-      message("No missing values found; returning input tomic")
+      cli::cli_alert_info("No missing values found; returning input tomic")
     }
-
     return(tomic)
   }
 
-  if (nrow(triple_omic$measurement) == 0) {
-    plot_missing_values(triple_omic, value_var)
-    stop(
-      "All measurements were filtered using missing_val_method = ",
-      missing_val_method, "\na missing value plot was printed"
-    )
+  if (nrow(triple_omic$measurements) == 0) {
+    plot_missing_values(tomic %>% tomic_to("triple_omic"), value_var)
+    cli::cli_abort(c(
+      "All measurements filtered",
+      "x" = "All measurements were filtered using {.code missing_val_method = {missing_val_method}}",
+      "i" = "A missing value plot was printed above"
+    ))
   }
 
   n_dropped_samples <- n_initial_samples - nrow(triple_omic$samples)
-
   if (n_dropped_samples != 0) {
     if (verbose) {
-      print(
-        glue::glue("{n_dropped_samples} samples dropped due to missing values")
-      )
+      cli::cli_alert_info("{n_dropped_samples} sample{?s} dropped due to missing values")
     }
   }
 
@@ -223,9 +224,7 @@ remove_missing_values <- function(
 
   if (n_dropped_features != 0) {
     if (verbose) {
-      print(
-        glue::glue("{n_dropped_features} features dropped due to missing values")
-      )
+      cli::cli_alert_info("{n_dropped_features} feature{?s} dropped due to missing values")
     }
   }
 
@@ -244,16 +243,20 @@ remove_missing_values <- function(
 #' @returns A \code{tomic} object with imputed measurements.
 #'
 #' @examples
+#' \dontrun{
+#' # Requires the 'impute' package from Bioconductor
 #' impute_missing_values(brauer_2008_triple)
+#' }
 #'
 #' @export
 impute_missing_values <- function(
-    tomic,
-    impute_var_name = "imputed",
-    value_var = NULL,
-    ...) {
+  tomic,
+  impute_var_name = "imputed",
+  value_var = NULL,
+  ...
+){
   if (!("impute" %in% rownames(utils::installed.packages()))) {
-    stop("Install \"impute\" using remotes::install_bioc(\"impute\") to use this function")
+    cli::cli_abort("Install \"impute\" following the instructions on {.url https://www.bioconductor.org/packages/release/bioc/html/impute.html}")
   }
 
   checkmate::assertClass(tomic, "tomic")
@@ -261,18 +264,19 @@ impute_missing_values <- function(
   design <- tomic$design
   feature_pk <- design$feature_pk
   sample_pk <- design$sample_pk
-
   value_var <- value_var_handler(value_var = value_var, design)
-
   checkmate::assertString(impute_var_name)
+
   existing_measurements <- design$measurements %>%
     {
       .$variable[!(.$type %in% c("feature_primary_key", "sample_primary_key"))]
     }
+
   if (impute_var_name %in% existing_measurements) {
-    warning(glue::glue(
-      "impute_var_name of \"{impute_var_name}\" already exists in measurements;
-      -  the existing variable will be overwritten"
+    cli::cli_warn(c(
+      "Overwriting existing variable",
+      "!" = "{.var {impute_var_name}} already exists in measurements",
+      "i" = "The existing variable will be overwritten"
     ))
   }
 
@@ -282,19 +286,19 @@ impute_missing_values <- function(
     value_var
   )
   missing_values <- found_missing_values$missing_values
+
   if (nrow(missing_values) == 0) {
-    message("No missing values found; returning input tomic")
+    cli::cli_alert_info("No missing values found; returning input tomic")
     return(tomic)
   }
 
   # impute data
-
   # format as a matrix
   cast_formula <- stats::as.formula(paste0(feature_pk, " ~ ", sample_pk))
   omic_matrix <- triple_omic$measurements %>%
     reshape2::acast(formula = cast_formula, value.var = value_var)
 
-  # imput data
+  # impute
   imputed_measurements <- impute::impute.knn(
     omic_matrix,
     ...
@@ -302,17 +306,29 @@ impute_missing_values <- function(
     # convert back into a tall dataset
     as.data.frame() %>%
     dplyr::mutate(!!rlang::sym(feature_pk) := rownames(.)) %>%
-    tidyr::gather(
-      !!rlang::sym(sample_pk),
-      !!rlang::sym(impute_var_name),
-      -rlang::sym(feature_pk)
+    tidyr::pivot_longer(
+      cols = -dplyr::all_of(feature_pk),
+      names_to = sample_pk,
+      values_to = impute_var_name
     ) %>%
     dplyr::as_tibble()
 
+  # coerce feature and/or sample variables to their original classes
+  # (they will be converted to characters by impute.knn)
+  imputed_measurements[[feature_pk]] <- coerce_to_classes(
+    imputed_measurements[[feature_pk]],
+    triple_omic$features[[feature_pk]]
+  )
+  imputed_measurements[[sample_pk]] <- coerce_to_classes(
+    imputed_measurements[[sample_pk]],
+    triple_omic$samples[[sample_pk]]
+  )
+
+  # if in-place imputation is desired then remove the old variable
   updated_measurements <- triple_omic$measurements
   if (value_var == impute_var_name) {
     updated_measurements <- updated_measurements %>%
-      dplyr::select(-!!rlang::sym(value_var))
+      dplyr::select(-dplyr::all_of(value_var))
   }
 
   updated_measurements <- updated_measurements %>%
@@ -326,13 +342,31 @@ impute_missing_values <- function(
   return(tomic_to(updated_triple, class(tomic)[1]))
 }
 
-plot_missing_values <- function(triple_omic, value_var) {
-  cast_formula <- stats::as.formula(paste0(feature_pk, " ~ ", sample_pk))
+#' Plot Missing Values
+#'
+#' Create a simple plot of missing values.
+#'
+#' @inheritParams tomic_to
+#' @param value_var the measurement variable to check for missingness (NA or no entry)
+#'
+#' @returns a ggplot2 grob
+#'
+#' @export
+#'
+#' @examples
+#' plot_missing_values(brauer_2008_triple)
+plot_missing_values <- function(tomic, value_var = NULL) {
 
-  omic_matrix <- triple_omic$measurements %>%
+  checkmate::assertClass(tomic, "tomic")
+  design <- tomic$design
+  value_var = value_var_handler(value_var, design)
+
+  cast_formula <- stats::as.formula(paste0(design$feature_pk, " ~ ", design$sample_pk))
+
+  omic_matrix <- get_tomic_table(tomic, "measurements") %>%
     reshape2::acast(formula = cast_formula, value.var = value_var)
 
-  graphics::image(t(omic_matrix))
+  graphics::image(t(is.na(omic_matrix)))
 }
 
 value_var_handler <- function(value_var = NULL, design) {
@@ -340,17 +374,17 @@ value_var_handler <- function(value_var = NULL, design) {
     design$measurements$type %in% c("numeric", "integer")
   ]
   if (length(possible_value_vars) == 0) {
-    stop(
+    cli::cli_abort(
       "no quantitative (numeric or integer) variables were found in the
-      triple_omic measurements table pca can only be applied to quantitative
-      variables"
+      triple_omic measurements table."
     )
   }
 
   if (length(possible_value_vars) > 1 && is.null(value_var)) {
-    stop(
-      "value_var must be specified since multiple quantitative measurement
-      variables exist"
+    cli::cli_abort(
+      "{.var \"value_var\"} was not provided and an appropriate value could not
+        be automatically chosen since there are {length(possible_value_vars)}
+        valid value variables: {.field {possible_value_vars}}"
     )
   }
 
@@ -363,15 +397,39 @@ value_var_handler <- function(value_var = NULL, design) {
   return(value_var)
 }
 
-find_triple_omic_missing_values <- function(triple_omic, value_var) {
+find_triple_omic_missing_values <- function(
+  triple_omic,
+  value_var,
+  missing_values_types = c("NA", "NaN", "Inf")
+  ) {
+
   all_expected_obs <- tidyr::expand_grid(
     triple_omic$features[triple_omic$design$feature_pk],
     triple_omic$samples[triple_omic$design$sample_pk]
   )
 
-  observed_measurements <- triple_omic$measurements %>%
-    # drop missing values
-    dplyr::filter_at(value_var, function(x) !is.na(x))
+  observed_measurements <- triple_omic$measurements
+
+  if ("NA" %in% missing_values_types) {
+    observed_measurements <- observed_measurements %>%
+      dplyr::filter(
+        !is.na(!!rlang::sym(value_var))
+      )
+  }
+
+  if ("NaN" %in% missing_values_types) {
+    observed_measurements <- observed_measurements %>%
+      dplyr::filter(
+        !is.nan(!!rlang::sym(value_var))
+      )
+  }
+
+  if ("Inf" %in% missing_values_types) {
+    observed_measurements <- observed_measurements %>%
+      dplyr::filter(
+        is.finite(!!rlang::sym(value_var))
+      )
+  }
 
   missing_values <- all_expected_obs %>%
     dplyr::anti_join(
@@ -388,4 +446,78 @@ find_triple_omic_missing_values <- function(triple_omic, value_var) {
   )
 
   return(output)
+}
+
+#' Calculate Sample Mahalanobis Distances
+#'
+#' Determine each samples distance from the center of the data using Mahalanobis distance.
+#'
+#' @inheritParams tomic_to
+#' @param value_var the measurement variable to use for calculating distances
+#' @param max_pcs the maximum number of principal components to used for
+#'   representing the covariance matrix.
+#' @param scale if TRUE then the data will be scaled before calculating distances
+#'
+#' @returns The samples tibble with a new column `pc_distance` which contains the
+#'   Mahalanobis distances of individual samples from the PC elipsoid
+#'
+#' @details
+#' Since `romic` is built around using tall data where there are more features than
+#' samples calculating Mahalanobis distance off of the covariance matrix is not
+#' possible. Instead, we use SVD to create a low-dimensional representation of the
+#' covariance matrix and calculate distances from the center of the data in this
+#' space. This essentially involves weighting the principal components by their
+#' loadings.
+#'
+#' @examples
+#' calculate_sample_mahalanobis_distances(brauer_2008_tidy)
+#' @export
+calculate_sample_mahalanobis_distances <- function (
+  tomic,
+  value_var = NULL,
+  max_pcs = 10,
+  scale = FALSE
+  ) {
+
+  checkmate::assertClass(tomic, "tomic")
+  value_var <- value_var_handler(value_var, tomic$design)
+  checkmate::assertIntegerish(max_pcs, len = 1)
+
+  n_features <- nrow(romic::get_tomic_table(tomic, "features"))
+  n_samples <- nrow(romic::get_tomic_table(tomic, "samples"))
+  npcs <- pmin(max_pcs, n_features, n_samples)
+
+  X_std <- tomic %>%
+    # remove features with missing values
+    romic::remove_missing_values(value_var, "drop_features", verbose = FALSE) %>%
+    # convert to a matrix
+    romic::tomic_to_matrix(value_var) %>%
+    {scale(t(.), scale = scale) %>% t()}
+
+  # if X is constant for a feature (such all reads are 0) then
+  # scaling will put it to NaN. We need to remove these features
+  valid_X_std <- X_std[rowSums(is.nan(X_std)) == 0,]
+
+  # perform a singular value decomposition
+  svd_results <- svd(valid_X_std, nv = npcs)
+
+  # re-weight principal components by eigenvalues
+  X_std_v <- svd_results$v * matrix(svd_results$d[1:npcs], ncol = npcs, nrow = ncol(valid_X_std), byrow = TRUE)
+  rownames(X_std_v) <- colnames(valid_X_std)
+
+  pc_distances_by_sample <- tibble::tibble(
+    !!rlang::sym(tomic$design$sample_pk) := rownames(X_std_v),
+    pc_distance = rowSums(X_std_v^2)
+  ) %>%
+    dplyr::arrange(dplyr::desc(pc_distance))
+
+  # validate calculation
+  varex_leading_components <- sum(svd_results$d^2) * sum((svd_results$d^2 / sum(svd_results$d^2))[1:npcs])
+
+  stopifnot((sum(pc_distances_by_sample$pc_distance) - varex_leading_components)/varex_leading_components < 0.01)
+
+  samples_w_pc_distances <- romic::get_tomic_table(tomic, "samples") %>%
+    dplyr::left_join(pc_distances_by_sample, by = tomic$design$sample_pk)
+
+  return(samples_w_pc_distances)
 }

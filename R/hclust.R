@@ -1,11 +1,13 @@
 hclust_tidy_omic <- function(
-    tidy_omic,
-    feature_var,
-    sample_var,
-    value_var,
-    cluster_dim,
-    distance_measure = "dist",
-    hclust_method = "ward.D2") {
+  tidy_omic,
+  feature_var,
+  sample_var,
+  value_var,
+  cluster_dim,
+  distance_measure = "dist",
+  hclust_method = "ward.D2"
+  ) {
+
   check_tidy_omic(tidy_omic)
 
   checkmate::assertChoice(feature_var, tidy_omic$design$features$variable)
@@ -37,7 +39,7 @@ hclust_tidy_omic <- function(
   cluster_orders$columns <-
     coerce_to_classes(
       cluster_orders$columns,
-      tidy_omic$data[[tidy_omic$design$feature_pk]]
+      tidy_omic$data[[tidy_omic$design$sample_pk]]
     )
 
   # order rows and columns
@@ -49,7 +51,7 @@ hclust_tidy_omic <- function(
     )
 
   if (cluster_dim == "columns") {
-    # order by factor or alpha-numerically
+    # order features by factor or alpha-numerically
 
     if (
       any(class(distinct_features[[feature_var]]) %in% c("factor", "ordered"))
@@ -93,7 +95,7 @@ hclust_tidy_omic <- function(
     )
 
   if (cluster_dim == "rows") {
-    # order by factor or alpha-numerically
+    # order samples by factor or alpha-numerically
 
     if (any(class(distinct_samples[[sample_var]]) %in% c("factor", "ordered"))) {
       # retain previous ordering
@@ -208,19 +210,21 @@ hclust_tidy_omic <- function(
 #' hclust_order(df, "letters", "numbers", "noise", "rows")
 #' @export
 hclust_order <- function(
-    df,
-    feature_pk,
-    sample_pk,
-    value_var,
-    cluster_dim,
-    distance_measure = "dist",
-    hclust_method = "ward.D2") {
+  df,
+  feature_pk,
+  sample_pk,
+  value_var,
+  cluster_dim,
+  distance_measure = "dist",
+  hclust_method = "ward.D2"
+  ) {
+
   checkmate::assertDataFrame(df)
   checkmate::assertChoice(feature_pk, colnames(df))
   checkmate::assertChoice(sample_pk, colnames(df))
   checkmate::assertChoice(value_var, colnames(df))
   if (length(unique(c(feature_pk, sample_pk, value_var))) != 3) {
-    stop("feature_pk, sample_pk, and value_var must all be different")
+    cli::cli_abort("feature_pk, sample_pk, and value_var must all be different")
   }
   checkmate::assertChoice(cluster_dim, c("rows", "columns", "both"))
   checkmate::assertChoice(distance_measure, c("corr", "dist"))
@@ -285,8 +289,9 @@ hclust_order <- function(
 
 apply_hclust <- function(quant_matrix, distance_measure, hclust_method) {
   checkmate::assertMatrix(quant_matrix)
+
   if (nrow(quant_matrix) == 0) {
-    stop(quant_matrix, "contained zero rows")
+    cli::cli_abort("{.arg quant_matrix} contained zero rows")
   } else if (nrow(quant_matrix) == 1) {
     # if there is only one entry then we don't need to cluster it
     return(list(order = 1))
@@ -302,10 +307,14 @@ apply_hclust <- function(quant_matrix, distance_measure, hclust_method) {
       stats::as.dist()
 
     if (any(is.na(distance_matrix))) {
-      stop("NA distances are not allowed with hierarchical clustering")
+      cli::cli_abort("NA distances are not allowed with hierarchical clustering")
     }
   } else {
-    stop(glue::glue("{distance_measure} is not a defined distance_measure"))
+    cli::cli_abort(c(
+      "Invalid distance measure",
+      "x" = "{.val {distance_measure}} is not a valid {.arg distance_measure}",
+      "i" = "Valid options: {.val dist} or {.val corr}"
+    ))
   }
 
   stats::hclust(distance_matrix, method = hclust_method)
@@ -328,22 +337,28 @@ apply_hclust <- function(quant_matrix, distance_measure, hclust_method) {
 #'   greater than \code{max_display_features}
 #'
 downsample_heatmap <- function(
-    tidy_data,
-    value_var,
-    design,
-    max_display_features = 1000,
-    verbose = TRUE
-    ) {
+  tidy_data,
+  value_var,
+  design,
+  max_display_features = 1000,
+  verbose = TRUE
+) {
   checkmate::assertDataFrame(tidy_data)
   checkmate::assertChoice(value_var, colnames(tidy_data))
   checkmate::assertNumber(max_display_features)
   checkmate::assertLogical(verbose, len = 1)
 
   if (!("ordered_featureId" %in% colnames(tidy_data))) {
-    stop("ordered_featureId is a requred variable in tidy_data")
+    cli::cli_abort(c(
+      "Missing required variable",
+      "x" = "{.var ordered_featureId} is required in {.arg tidy_data}"
+    ))
   }
   if (!("ordered_sampleId" %in% colnames(tidy_data))) {
-    stop("ordered_sampleId is a requred variable in tidy_data")
+    cli::cli_abort(c(
+      "Missing required variable",
+      "x" = "{.var ordered_sampleId} is required in {.arg tidy_data}"
+    ))
   }
 
   checkmate::assertFactor(tidy_data$ordered_featureId)
@@ -363,9 +378,9 @@ downsample_heatmap <- function(
     n_features / ceiling(n_features / max_display_features)
   )
   if (verbose) {
-    message(glue::glue(
+    cli::cli_alert_info(
       "Downsampling {n_features} features to {realized_max_display_features}, targeting {max_display_features}"
-    ))
+    )
   }
 
   collapsed_rows_merges <- tibble::tibble(ordered_featureId_int = 1:n_features) %>%
@@ -391,12 +406,12 @@ downsample_heatmap <- function(
   # selected for different samples
 
   reduced_feature_attrs <- downsampled_df %>%
-    dplyr::distinct(!!!rlang::syms(
+    dplyr::distinct(dplyr::across(dplyr::all_of(
       c("collapsed_row_number", "ordered_featureId", design$features$variable)
-    )) %>%
-    dplyr::mutate_if(is.factor, as.character) %>%
+    ))) %>%
+    dplyr::mutate(dplyr::across(dplyr::where(is.factor), as.character)) %>%
     dplyr::group_by(collapsed_row_number) %>%
-    dplyr::summarize_all(collapse_feature_vars) %>%
+    dplyr::summarize(dplyr::across(dplyr::everything(), collapse_feature_vars)) %>%
     dplyr::arrange(collapsed_row_number) %>%
     # order featureId by collapsed_row_number
     dplyr::mutate(ordered_featureId = factor(ordered_featureId, levels = ordered_featureId))
@@ -407,7 +422,7 @@ downsample_heatmap <- function(
   )
 
   downsampled_attributes <- downsampled_df %>%
-    dplyr::select(!!!rlang::syms(other_attrs)) %>%
+    dplyr::select(dplyr::all_of(other_attrs)) %>%
     dplyr::group_by(collapsed_row_number, ordered_sampleId) %>%
     dplyr::slice(1) %>%
     dplyr::ungroup() %>%
@@ -419,10 +434,12 @@ downsample_heatmap <- function(
   failed_collapses <- downsampled_attributes %>%
     dplyr::mutate(ordered_featureId_int = as.integer(ordered_featureId)) %>%
     dplyr::filter(ordered_featureId_int != collapsed_row_number)
-  if (nrow(failed_collapses != 0)) {
-    stop(glue::glue(
-      "{nrow(failed_collapses)} downsampled rows were misordered
-      this is unexpected behavior"
+
+  if (nrow(failed_collapses) != 0) {
+    cli::cli_abort(c(
+      "Downsampling error",
+      "x" = "{nrow(failed_collapses)} downsampled row{?s} {?was/were} misordered",
+      "i" = "This is unexpected behavior - please report this issue"
     ))
   }
 
@@ -433,7 +450,7 @@ downsample_heatmap <- function(
       by = c("collapsed_row_number", "ordered_sampleId")
     ) %>%
     # discard collapsed_row_number since this
-    dplyr::select(!!!rlang::syms(colnames(tidy_data)))
+    dplyr::select(dplyr::all_of(colnames(tidy_data)))
 
   return(downsampled_tidy_data)
 }

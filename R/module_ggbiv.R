@@ -398,7 +398,7 @@ get_design_vars <- function(tomic, plot_table, filter_type) {
   } else if (filter_type == "quantitative") {
     variable_types$variable[variable_types$category == "quantitative"]
   } else {
-    stop("invalid filter_type")
+    cli::cli_abort("invalid filter_type")
   }
 }
 

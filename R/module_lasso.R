@@ -223,8 +223,10 @@ lassoServer <- function(id, tomic, tomic_table) {
             triple_omic[[plot_table]] <- tagged_table
             triple_omic$design[[plot_table]] <- updated_design
           } else {
-            stop(glue::glue(
-              "{input$lasso_method} is not a valid lasso method"
+            cli::cli_abort(c(
+              "Invalid lasso method",
+              "x" = "{.val {input$lasso_method}} is not a valid lasso method",
+              "i" = "Valid methods: {.val filter} or {.val tag}"
             ))
           }
 

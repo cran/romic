@@ -13,8 +13,8 @@ update_tidy_omic(tidy_omic, updated_tidy_data, new_variable_tables = c())
 \item{updated_tidy_data}{a tibble of data to use to update \code{tidy_omic}.}
 
 \item{new_variable_tables}{a named character vector of newly added variables
-in \code{updated_tidy_data} (names) and the table {features, samples,
-measurements} they apply to (values).}
+in \code{updated_tidy_data} (names) and the table (features, samples,
+measurements) they apply to (values).}
 }
 \value{
 a \code{tidy_omic} object with an updated schema and/or data.
@@ -31,4 +31,7 @@ updated_tidy_data <- tidy_omic$data \%>\%
   mutate(new_sample_var = "foo") \%>\%
   select(-DR)
 new_variable_tables <- c("new_sample_var" = "samples")
+
+update_tidy_omic(tidy_omic, updated_tidy_data, new_variable_tables)
+
 }

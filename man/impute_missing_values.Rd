@@ -27,6 +27,9 @@ A \code{tomic} object with imputed measurements.
 Impute missing values using K-nearest neighbors imputation
 }
 \examples{
+\dontrun{
+# Requires the 'impute' package from Bioconductor
 impute_missing_values(brauer_2008_triple)
+}
 
 }

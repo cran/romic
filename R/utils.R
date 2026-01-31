@@ -24,19 +24,18 @@ format_names_for_plotting <- function(chars, width = 40, truncate_at = 80) {
 }
 
 coerce_to_classes <- function(obj, reference_obj) {
-  reference_obj_class <- class(reference_obj)
+  reference_obj_class <- class(reference_obj)[1]
 
   if (any(reference_obj_class %in% "glue")) {
     out <- glue::as_glue(obj)
   } else if (any(reference_obj_class %in% c("factor", "ordered"))) {
-    out <-
-      do.call(
-        reference_obj_class,
-        list(
-          x = obj,
-          levels = levels(reference_obj)
-        )
+    out <- do.call(
+      reference_obj_class,
+      list(
+        x = obj,
+        levels = levels(reference_obj)
       )
+    )
   } else if (reference_obj_class == "character") {
     out <- as.character(obj)
   } else if (reference_obj_class == "numeric") {
@@ -46,13 +45,19 @@ coerce_to_classes <- function(obj, reference_obj) {
   } else if (reference_obj_class == "logical") {
     out <- as.logical(obj)
   } else {
-    stop(glue::glue("converting to {reference_obj_class} not implemented"))
+    cli::cli_abort(c(
+      "Unsupported class conversion",
+      "x" = "Converting to {.cls {reference_obj_class}} is not implemented",
+      "i" = "Supported classes: {.cls glue}, {.cls factor}, {.cls ordered}, {.cls character}, {.cls numeric}, {.cls integer}, {.cls logical}"
+    ))
   }
 
-  if (all(!is.na(reference_obj_class)) && any(is.na(out))) {
-    stop(glue::glue(
-      "{sum(is.na(out))} values were converted to NAs
-    when zero NAs are expected based on the reference object"
+  if (all(!is.na(reference_obj)) && any(is.na(out))) {
+    n_na <- sum(is.na(out))
+    cli::cli_abort(c(
+      "Unexpected NA values introduced",
+      "x" = "{n_na} value{?s} {?was/were} converted to NA during coercion",
+      "i" = "Zero NAs are expected based on the reference object"
     ))
   }
 
@@ -73,6 +78,7 @@ var_partial_match <- function(x, df) {
   checkmate::assertDataFrame(df)
 
   valid_vars <- colnames(df)
+
   # character match
   if (x %in% valid_vars) {
     return(x)
@@ -80,13 +86,23 @@ var_partial_match <- function(x, df) {
 
   # treat x as a regular expression
   var_match <- valid_vars[stringr::str_detect(valid_vars, x)]
+
   if (length(var_match) == 1) {
     return(var_match)
   } else if (length(var_match) == 0) {
-    stop(glue::glue("{x} did not match any variables. Valid variables are {paste(valid_vars, collapse = ', ')}. You can also specify a variable with a unique substring"))
+    cli::cli_abort(c(
+      "No matching variable found",
+      "x" = "{.val {x}} did not match any variables",
+      "i" = "Valid variables: {.var {valid_vars}}",
+      "i" = "You can also specify a variable with a unique substring or regular expression"
+    ))
   } else {
-    stop(glue::glue("{x} matched 2+ variables: {paste(var_match, collapse = ', ')}. This function treats the provided variable as a regular expression so please pass either a more completely defined variable name or a regular expression which will match a single variable"))
+    n_matches <- length(var_match)
+    cli::cli_abort(c(
+      "Ambiguous variable match",
+      "x" = "{.val {x}} matched {n_matches} variables: {.var {var_match}}",
+      "i" = "This function treats the provided variable as a regular expression",
+      "i" = "Please provide a more specific variable name or regular expression that matches only one variable"
+    ))
   }
 }
-
-

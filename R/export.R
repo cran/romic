@@ -92,8 +92,7 @@ export_tomic_as_tidy <- function(tomic, dir_path, name_preamble, verbose = TRUE)
 #'   Use transpose to treat samples as rows
 #' filename
 #' @inheritParams export_tomic_as_triple
-#' @param value_var measurement variable to use for the matrix
-#' @param transpose if TRUE then samples will be stored as rows
+#' @inheritParams tomic_to_matrix
 #' @inheritParams create_tidy_omic
 #'
 #' @returns Export one table which contains metabolites as rows and samples
@@ -112,7 +111,7 @@ export_tomic_as_wide <- function(
     value_var = NULL,
     transpose = FALSE,
     verbose = TRUE
-    ) {
+) {
   checkmate::assertDirectory(dir_path)
   checkmate::assertString(name_preamble)
   checkmate::assertLogical(transpose, len = 1)
@@ -120,42 +119,7 @@ export_tomic_as_wide <- function(
 
   triple_omic <- tomic_to(tomic, "triple_omic")
   design <- triple_omic$design
-
-  valid_value_vars <- design$measurements %>%
-    dplyr::filter(
-      !(type %in% c("feature_primary_key", "sample_primary_key"))
-    ) %>%
-    {
-      .$variable
-    }
-
-  if (is.null(value_var)) {
-    if (length(valid_value_vars) == 1) {
-      value_var <- valid_value_vars
-    } else {
-      stop(glue::glue(
-        "\"value_var\" was not provided and an appropriate value could not
-        - be automatically chosen since there are {length(valid_value_vars)}
-        - valid value variables: {paste(valid_value_vars, collapse = ', ')}"
-      ))
-    }
-  } else {
-    checkmate::assertChoice(value_var, valid_value_vars)
-  }
-
-  # structure measurements
-  if (transpose) {
-    cast_formula <- stats::as.formula(glue::glue(
-      "{design$sample_pk} ~ {design$feature_pk}"
-    ))
-  } else {
-    cast_formula <- stats::as.formula(glue::glue(
-      "{design$feature_pk} ~ {design$sample_pk}"
-    ))
-  }
-
-  measurements_matrix <- triple_omic$measurements %>%
-    reshape2::acast(formula = cast_formula, value.var = value_var)
+  measurements_matrix <- tomic_to_matrix(triple_omic, value_var)
 
   if (transpose) {
     feature_labels <- colnames(measurements_matrix)
@@ -168,8 +132,8 @@ export_tomic_as_wide <- function(
   # create a top-left-null section
   n_feature_attr <- nrow(design$features)
   n_sample_attr <- nrow(design$samples)
-
   top_left_void <- matrix(nrow = n_sample_attr, ncol = n_feature_attr)
+
   if (transpose) {
     top_left_void <- t(top_left_void)
   }
@@ -179,14 +143,13 @@ export_tomic_as_wide <- function(
   # setup sample and peakgroup attributes
   # match feature and sample primary keys to class of acast to make
   # sure sample and features will be aligned with their measurements
-
   ordered_samples <- triple_omic$samples %>%
     dplyr::mutate(!!rlang::sym(design$sample_pk) := factor(
       !!rlang::sym(design$sample_pk),
       levels = sample_labels
     )) %>%
     dplyr::arrange(!!rlang::sym(design$sample_pk)) %>%
-    dplyr::mutate_all(as.character)
+    dplyr::mutate(dplyr::across(dplyr::everything(), as.character))
 
   ordered_features <- triple_omic$features %>%
     dplyr::mutate(!!rlang::sym(design$feature_pk) := factor(
@@ -194,8 +157,8 @@ export_tomic_as_wide <- function(
       levels = feature_labels
     )) %>%
     dplyr::arrange(!!rlang::sym(design$feature_pk)) %>%
-    dplyr::mutate_if(is.numeric, round, 3) %>%
-    dplyr::mutate_all(as.character)
+    dplyr::mutate(dplyr::across(dplyr::where(is.numeric), \(x) round(x, 3))) %>%
+    dplyr::mutate(dplyr::across(dplyr::everything(), as.character))
 
   if (transpose) {
     stopifnot(
@@ -262,16 +225,94 @@ export_tomic_as_wide <- function(
   }
 
   filename <- paste0(name_preamble, "_", "wide.tsv")
+  filepath <- file.path(dir_path, filename)
+
   if (verbose) {
-    message(glue::glue("Saving {filename} to {dir_path}"))
+    cli::cli_alert_info("Saving wide data {.file {filepath}}")
   }
 
   output %>%
     as.data.frame() %>%
     readr::write_tsv(
-      file = file.path(dir_path, filename),
+      file = filepath,
       col_names = FALSE
     )
 
   invisible(0)
+}
+
+#' Tomic To Matrix
+#'
+#' Convert a T*Omic object to a feature x sample matrix matching the feature
+#' and sample ordering of a Triple Omic object.
+#'
+#' @inheritParams export_tomic_as_triple
+#' @param value_var measurement variable to use for the matrix
+#' @param transpose if TRUE then samples will be stored as rows.
+#'   If FALSE (default) then samples will be columns.
+#'
+#' @returns a matrix with features as rows and samples as columns (if transpose
+#'   FALSE) or features as columns and samples as rows (if transpose is TRUE).
+#'
+#' @details Comparing the matrix to feature or sample variable vectors should
+#' work because the orders are matched. But, if features or samples are reordered
+#' after creating the matrix then the matrix's dimensions will no longer be
+#' aligned to feature and samples.
+#'
+#' @export
+#'
+#' @examples
+#' tomic_to_matrix(brauer_2008_triple)
+tomic_to_matrix <- function(
+  tomic,
+  value_var = NULL,
+  transpose = FALSE
+) {
+
+  triple_omic <- tomic_to(tomic, "triple_omic")
+  design <- triple_omic$design
+
+  value_var = value_var_handler(value_var, design)
+  checkmate::assertLogical(transpose, len = 1)
+
+  # structure measurements
+  if (transpose) {
+    cast_formula <- stats::as.formula(glue::glue(
+      "{design$sample_pk} ~ {design$feature_pk}"
+    ))
+  } else {
+    cast_formula <- stats::as.formula(glue::glue(
+      "{design$feature_pk} ~ {design$sample_pk}"
+    ))
+  }
+
+  # get the order of features and samples in their respective tables.
+  # that way we can set the matrix rows/columns to match this order
+  # feature / sample variables can be used with the indexes already matching
+  # the matrices row and column names.
+  feature_fcts <- get_tomic_table(tomic, "features")[[design$feature_pk]]
+  sample_fcts <- get_tomic_table(tomic, "samples")[[design$sample_pk]]
+
+  measurements_matrix <- triple_omic$measurements %>%
+    dplyr::mutate(
+      !!rlang::sym(design$sample_pk) := factor(
+        !!rlang::sym(design$sample_pk),
+        levels = sample_fcts
+      ),
+      !!rlang::sym(design$feature_pk) := factor(
+        !!rlang::sym(design$feature_pk),
+        levels = feature_fcts
+      )
+    ) %>%
+    reshape2::acast(formula = cast_formula, value.var = value_var)
+
+  if (transpose) {
+    stopifnot(all(colnames(measurements_matrix) == feature_fcts))
+    stopifnot(all(rownames(measurements_matrix) == sample_fcts))
+  } else {
+    stopifnot(all(rownames(measurements_matrix) == feature_fcts))
+    stopifnot(all(colnames(measurements_matrix) == sample_fcts))
+  }
+
+  return(measurements_matrix)
 }

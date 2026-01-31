@@ -245,7 +245,7 @@ plot_univariate <- function(tomic_table, x_var, color_var = NULL) {
   # determine plot type from variable classes
 
   if (!class(tomic_table[[x_var]]) %in% c("numeric", "integer")) {
-    stop("Univariate plot only accepts a numeric/integer x-axis variable")
+    cli::cli_abort("Univariate plot only accepts a numeric/integer x-axis variable")
   }
 
   grob <- ggplot(tomic_table, aes(x = !!rlang::sym(x_var))) +

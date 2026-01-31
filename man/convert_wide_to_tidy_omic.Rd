@@ -40,11 +40,10 @@ Convert a wide dataset of species' abundances (gene product, metabolites,
   lipids, ...) into a triple_omic dataset (one observation per row)
 }
 \examples{
-
 library(dplyr)
 
 wide_measurements <- brauer_2008_triple[["measurements"]] \%>\%
-  tidyr::spread(sample, expression)
+  tidyr::pivot_wider(names_from = sample, values_from = expression)
 
 wide_df <- brauer_2008_triple[["features"]] \%>\%
   left_join(wide_measurements, by = "name")

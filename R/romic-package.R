@@ -12,45 +12,47 @@
 ## usethis namespace: start
 #' @importFrom dplyr %>%
 #' @importFrom rlang :=
+#' @import ggplot2
+#' @import shiny
 ## usethis namespace: end
 NULL
 
-#' @import ggplot2
-#' @import shiny
 utils::globalVariables(c(
   ".",
-  "n",
-  "variable",
   "attribute",
   "attribute_value",
   "collapsed_row_number",
-  "n_entries",
-  "entry_number",
   "eigenvalue",
+  "entry_number",
+  "feature_label",
+  "feature_pk",
+  "G0.05",
+  "GID",
+  "GWEIGHT",
+  "iris",
+  "msg",
+  "n",
+  "n_entries",
+  "NAME",
+  "name",
+  "number",
+  "ordered_featureId",
+  "ordered_featureId_int",
+  "ordered_sampleId",
+  "orderedId",
+  "pc_distance",
+  "sample_label",
+  "sample_pk",
+  "Sepal.Length",
+  "Sepal.Width",
+  "systematic_name",
+  "type",
+  "U0.3",
+  "valid_tables",
+  "variable",
   "x",
   "x_var",
   "y",
   "y_var",
-  "type",
-  "feature_pk",
-  "feature_label",
-  "ordered_featureId",
-  "ordered_featureId_int",
-  "sample_pk",
-  "sample_label",
-  "ordered_sampleId",
-  "orderedId",
-  "valid_tables",
-  "NAME",
-  "name",
-  "systematic_name",
-  "number",
-  "GID",
-  "YORF",
-  "GWEIGHT",
-  "G0.05",
-  "U0.3",
-  "iris",
-  "Sepal.Length",
-  "Sepal.Width"
+  "YORF"
 ))
